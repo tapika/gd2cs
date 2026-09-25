@@ -1,0 +1,29 @@
+name: gd2cs
+
+on:
+  push:
+    paths:
+      - "**"
+  pull_request:
+    paths:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore gd2cs.slnx
+      - name: Build
+        run: dotnet build gd2cs.slnx --no-restore --configuration Release
+      - name: Test
+        run: dotnet test gd2cs.slnx --no-build --configuration Release --logger "console;verbosity=minimal"
