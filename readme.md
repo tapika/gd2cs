@@ -25,3 +25,17 @@ The active project language selects the source folder. Output is written to the 
 
 This is done in case if you need to transpile `.cs` back to `.gd`, for example for web export.
 
+## Build backtranslation
+
+Add `--postbuild` when translating GDScript to C#:
+
+```text
+gd2cs --project <project> --script myscript --postbuild
+```
+
+This adds an idempotent target to the generated or existing `.csproj`. After each successful C# build, the target runs gd2cs with `--scriptonly` to regenerate the GDScript file again.
+
+`--scriptonly` translates only the selected script. It does not change project settings, references, caches, `.gdignore` files, or the source script.
+
+This way it's possible to observe that you will not break `.gd` script due to `gd2cs` non-supported C# languages features.
+

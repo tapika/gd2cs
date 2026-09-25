@@ -40,6 +40,10 @@ public static class CliApplication
         {
             Description = "Transpile the script without modifying the Godot project."
         };
+        var postBuildOption = new Option<bool>("--postbuild")
+        {
+            Description = "Backtranslate the C# script to GDScript after each C# build."
+        };
 
         var command = new RootCommand("Translate Godot scripts between GDScript and C#.");
         command.Options.Add(projectOption);
@@ -49,6 +53,7 @@ public static class CliApplication
         command.Options.Add(verboseOption);
         command.Options.Add(resetOption);
         command.Options.Add(scriptOnlyOption);
+        command.Options.Add(postBuildOption);
         command.SetAction(parseResult => Run(
             parseResult,
             projectOption,
@@ -58,6 +63,7 @@ public static class CliApplication
             verboseOption,
             resetOption,
             scriptOnlyOption,
+            postBuildOption,
             godotTypes));
         return command;
     }
@@ -71,6 +77,7 @@ public static class CliApplication
         Option<bool> verboseOption,
         Option<bool> resetOption,
         Option<bool> scriptOnlyOption,
+        Option<bool> postBuildOption,
         GodotTypeCatalog? godotTypes)
     {
         var project = parseResult.GetValue(projectOption)!;
@@ -78,6 +85,7 @@ public static class CliApplication
         var target = parseResult.GetValue(targetOption);
         var godot = parseResult.GetValue(godotOption);
         var scriptOnly = parseResult.GetValue(scriptOnlyOption);
+        var postBuild = parseResult.GetValue(postBuildOption);
 
         if (!project.Exists)
             throw new DirectoryNotFoundException(project.FullName);
@@ -122,7 +130,10 @@ public static class CliApplication
             if (outputLanguage == "cs")
             {
                 projectIntegration.ReplaceCSharpFeature(enabled: true);
-                projectIntegration.EnsureCSharpProject(projectIntegration.ReadAssemblyName());
+                projectIntegration.EnsureCSharpProject(
+                    projectIntegration.ReadAssemblyName(),
+                    postBuild ? script : null,
+                    postBuild ? CurrentCommand() : null);
             }
             else
             {
@@ -233,5 +244,13 @@ public static class CliApplication
         if (File.Exists(backupPath))
             File.Delete(backupPath);
         File.Move(sourcePath, backupPath);
+    }
+
+    private static string CurrentCommand()
+    {
+        var command = Path.GetFullPath(Environment.GetCommandLineArgs()[0]);
+        return command.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            ? "dotnet \"" + command + "\""
+            : "\"" + command + "\"";
     }
 }

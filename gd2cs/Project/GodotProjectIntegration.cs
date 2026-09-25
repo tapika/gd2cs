@@ -33,7 +33,7 @@ public sealed class GodotProjectIntegration
     }
 
     // Creates the minimal Godot C# project and XML solution when either is absent.
-    public void EnsureCSharpProject(string assemblyName)
+    public void EnsureCSharpProject(string assemblyName, string? postBuildScript = null, string? postBuildCommand = null)
     {
         EnsureDotnetConfiguration(assemblyName);
 
@@ -46,11 +46,34 @@ public sealed class GodotProjectIntegration
             WriteXml(projectFile, CreateCSharpProject());
         }
 
+        if (postBuildScript is not null && postBuildCommand is not null)
+            EnsurePostBuild(projectFile, postBuildScript, postBuildCommand);
+
         if (!Directory.EnumerateFiles(projectPath, "*.slnx", SearchOption.TopDirectoryOnly).Any())
         {
             var solutionFile = Path.Combine(projectPath, assemblyName + ".slnx");
             WriteXml(solutionFile, CreateSolution(Path.GetFileName(projectFile)));
         }
+    }
+
+    private static void EnsurePostBuild(string projectFile, string script, string command)
+    {
+        var document = XDocument.Load(projectFile, LoadOptions.PreserveWhitespace);
+        var project = document.Root ?? throw new InvalidOperationException("C# project has no root element.");
+        var targetName = "Gd2CsBacktranslate" + Regex.Replace(Path.GetFileNameWithoutExtension(script), "[^A-Za-z0-9_]", string.Empty);
+        project.Elements("Target").Where(element => (string?)element.Attribute("Name") == targetName).Remove();
+        project.Add(
+            new XElement(
+                "Target",
+                new XAttribute("Name", targetName),
+                new XAttribute("AfterTargets", "Build"),
+                new XAttribute("Condition", "'$(DesignTimeBuild)' != 'true'"),
+                new XElement(
+                    "Exec",
+                    new XAttribute(
+                        "Command",
+                        command + " --project \"$(MSBuildProjectDirectory)\" --script \"" + script + "\" --scriptonly"))));
+        WriteXml(projectFile, document);
     }
 
     // Updates only Script ext_resources that point at the translated source path.
