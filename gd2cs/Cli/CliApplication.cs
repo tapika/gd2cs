@@ -1,0 +1,182 @@
+using System.CommandLine;
+using System.CommandLine.Parsing;
+using System.Diagnostics;
+using gd2cs.Language;
+using gd2cs.Project;
+
+namespace gd2cs.Cli;
+
+public static class CliApplication
+{
+    public static RootCommand CreateCommand(GodotTypeCatalog? godotTypes = null)
+    {
+        var projectOption = new Option<DirectoryInfo>("--project")
+        {
+            Description = "Path to the Godot project.",
+            Required = true
+        };
+        var scriptOption = new Option<string>("--script")
+        {
+            Description = "Script path or script name.",
+            Required = true
+        };
+        var targetOption = new Option<string?>("--to")
+        {
+            Description = "Target language: cs or gd. Multiple targets may be comma-separated."
+        };
+        var godotOption = new Option<FileInfo?>("--godot")
+        {
+            Description = "Path to the Godot .NET executable."
+        };
+        var verboseOption = new Option<bool>("--verbose")
+        {
+            Description = "Write detailed progress information."
+        };
+        var resetOption = new Option<bool>("--reset-before")
+        {
+            Description = "Reset the project before transpiling."
+        };
+
+        var command = new RootCommand("Translate Godot scripts between GDScript and C#.");
+        command.Options.Add(projectOption);
+        command.Options.Add(scriptOption);
+        command.Options.Add(targetOption);
+        command.Options.Add(godotOption);
+        command.Options.Add(verboseOption);
+        command.Options.Add(resetOption);
+        command.SetAction(parseResult => Run(
+            parseResult,
+            projectOption,
+            scriptOption,
+            targetOption,
+            godotOption,
+            verboseOption,
+            resetOption,
+            godotTypes));
+        return command;
+    }
+
+    private static int Run(
+        ParseResult parseResult,
+        Option<DirectoryInfo> projectOption,
+        Option<string> scriptOption,
+        Option<string?> targetOption,
+        Option<FileInfo?> godotOption,
+        Option<bool> verboseOption,
+        Option<bool> resetOption,
+        GodotTypeCatalog? godotTypes)
+    {
+        var project = parseResult.GetValue(projectOption)!;
+        var script = parseResult.GetValue(scriptOption)!;
+        var target = parseResult.GetValue(targetOption);
+        var godot = parseResult.GetValue(godotOption);
+
+        if (!project.Exists)
+            throw new DirectoryNotFoundException(project.FullName);
+        if (!File.Exists(Path.Combine(project.FullName, "project.godot")))
+            throw new InvalidOperationException("--project does not contain project.godot.");
+
+        if (parseResult.GetValue(resetOption))
+            ResetProject(project.FullName);
+
+        var resourceRelativeScript = script.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
+            ? script[6..]
+            : script;
+        var relativeScript = resourceRelativeScript.Replace('/', Path.DirectorySeparatorChar);
+        var scriptWithoutExtension = Path.ChangeExtension(relativeScript, null);
+        var scriptDirectory = relativeScript.Contains(Path.DirectorySeparatorChar)
+            ? project.FullName
+            : Path.Combine(project.FullName, "scripts");
+        var basePath = Path.Combine(scriptDirectory, scriptWithoutExtension);
+        var projectIntegration = new GodotProjectIntegration(project.FullName);
+        var targets = ParseTargets(target, basePath, projectIntegration.IsCSharpProject());
+        var transpiler = new Transpiler(
+            godotTypes ?? GodotTypeCatalog.Load(project.FullName, godot?.FullName));
+
+        foreach (var outputLanguage in targets)
+        {
+            var sourceExtension = outputLanguage == "cs" ? ".gd" : ".cs";
+            var targetExtension = outputLanguage == "cs" ? ".cs" : ".gd";
+            var sourcePath = basePath + sourceExtension;
+            var targetPath = basePath + targetExtension;
+            transpiler.TranspileFile(sourcePath, targetPath);
+
+            var sourceResourcePath = projectIntegration.ToResourcePath(sourcePath);
+            var targetResourcePath = projectIntegration.ToResourcePath(targetPath);
+            if (outputLanguage == "cs")
+            {
+                projectIntegration.ReplaceCSharpFeature(enabled: true);
+                projectIntegration.EnsureCSharpProject(projectIntegration.ReadAssemblyName());
+            }
+            else
+            {
+                projectIntegration.ReplaceCSharpFeature(enabled: false);
+                projectIntegration.ClearGodotCSharpCaches();
+            }
+            var changedReferences = projectIntegration.RewriteReferences(
+                sourceResourcePath,
+                targetResourcePath);
+            projectIntegration.RewriteScriptReferences(sourceResourcePath, targetResourcePath);
+            if (outputLanguage == "cs")
+                BackupSource(sourcePath);
+            Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
+            if (parseResult.GetValue(verboseOption))
+                Console.WriteLine($"Updated {changedReferences.Count} project resource file(s).");
+        }
+
+        return 0;
+    }
+
+    private static List<string> ParseTargets(string? target, string basePath, bool isCSharpProject)
+    {
+        if (target is null)
+        {
+            var sourceExtension = isCSharpProject ? ".cs" : ".gd";
+            var targetLanguage = isCSharpProject ? "gd" : "cs";
+            if (File.Exists(basePath + sourceExtension))
+                return [targetLanguage];
+            throw new FileNotFoundException($"Neither '{basePath}.gd' nor '{basePath}.cs' exists.");
+        }
+
+        var result = target.ToLowerInvariant()
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (result.Length == 0 || result.Any(value => value is not ("cs" or "gd")))
+            throw new ArgumentException("--to values must be cs or gd.");
+        return new List<string>(result);
+    }
+
+    private static void ResetProject(string projectPath)
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo("git")
+            {
+                WorkingDirectory = projectPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        process.StartInfo.ArgumentList.Add("-c");
+        process.StartInfo.ArgumentList.Add($"safe.directory={projectPath}");
+        process.StartInfo.ArgumentList.Add("--no-optional-locks");
+        process.StartInfo.ArgumentList.Add("reset");
+        process.StartInfo.ArgumentList.Add("--hard");
+        process.StartInfo.ArgumentList.Add("HEAD");
+        process.Start();
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException("Git reset failed; no files were transpiled.\n" + standardOutput + standardError);
+    }
+
+    private static void BackupSource(string sourcePath)
+    {
+        var backupPath = sourcePath + ".bkp";
+        if (File.Exists(backupPath))
+            File.Delete(backupPath);
+        File.Move(sourcePath, backupPath);
+    }
+}

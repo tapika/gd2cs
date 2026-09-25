@@ -1,0 +1,6 @@
+bin/
+obj/
+**/bin/
+**/obj/
+.vs
+/gd2cs/Properties/launchSettings.json

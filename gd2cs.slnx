@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="gd2cs/gd2cs.csproj" />
+  <Project Path="tests/tests.csproj" />
+</Solution>
