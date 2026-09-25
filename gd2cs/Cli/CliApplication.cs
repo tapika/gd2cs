@@ -36,6 +36,10 @@ public static class CliApplication
         {
             Description = "Reset the project before transpiling."
         };
+        var scriptOnlyOption = new Option<bool>("--scriptonly")
+        {
+            Description = "Transpile the script without modifying the Godot project."
+        };
 
         var command = new RootCommand("Translate Godot scripts between GDScript and C#.");
         command.Options.Add(projectOption);
@@ -44,6 +48,7 @@ public static class CliApplication
         command.Options.Add(godotOption);
         command.Options.Add(verboseOption);
         command.Options.Add(resetOption);
+        command.Options.Add(scriptOnlyOption);
         command.SetAction(parseResult => Run(
             parseResult,
             projectOption,
@@ -52,6 +57,7 @@ public static class CliApplication
             godotOption,
             verboseOption,
             resetOption,
+            scriptOnlyOption,
             godotTypes));
         return command;
     }
@@ -64,19 +70,21 @@ public static class CliApplication
         Option<FileInfo?> godotOption,
         Option<bool> verboseOption,
         Option<bool> resetOption,
+        Option<bool> scriptOnlyOption,
         GodotTypeCatalog? godotTypes)
     {
         var project = parseResult.GetValue(projectOption)!;
         var script = parseResult.GetValue(scriptOption)!;
         var target = parseResult.GetValue(targetOption);
         var godot = parseResult.GetValue(godotOption);
+        var scriptOnly = parseResult.GetValue(scriptOnlyOption);
 
         if (!project.Exists)
             throw new DirectoryNotFoundException(project.FullName);
         if (!File.Exists(Path.Combine(project.FullName, "project.godot")))
             throw new InvalidOperationException("--project does not contain project.godot.");
 
-        if (parseResult.GetValue(resetOption))
+        if (parseResult.GetValue(resetOption) && !scriptOnly)
             ResetProject(project.FullName);
 
         var resourceRelativeScript = script.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
@@ -102,6 +110,12 @@ public static class CliApplication
             var targetPath = paths.Target;
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             transpiler.TranspileFile(sourcePath, targetPath);
+
+            if (scriptOnly)
+            {
+                Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
+                continue;
+            }
 
             var sourceResourcePath = projectIntegration.ToResourcePath(sourcePath);
             var targetResourcePath = projectIntegration.ToResourcePath(targetPath);

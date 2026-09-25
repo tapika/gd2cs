@@ -108,7 +108,8 @@ public sealed class CommandLineTests
             "--to", "cs,gd",
             "--godot", "Godot.exe",
             "--verbose",
-            "--reset-before"
+            "--reset-before",
+            "--scriptonly"
         ]);
 
         Assert.Empty(result.Errors);
