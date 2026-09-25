@@ -7,3 +7,21 @@ Normally it's assumed that .cs code was generated first from gd script
 and was not dramatically changed. So .cs to gd script transpiling is supported, but
 not all C# language features are supported.
 
+## Paired script folders
+
+Scripts can be kept in paired language folders:
+
+```text
+scripts/myscript-gd/            scripts/myscript-cs/
+```
+
+Run the script by name:
+
+```text
+gd2cs --project <project> --script myscript
+```
+
+The active project language selects the source folder. Output is written to the opposite folder without deleting the source. `gd2cs` adds `.gdignore` to the source folder, removes it from the target folder, and updates script references.
+
+This is done in case if you need to transpile `.cs` back to `.gd`, for example for web export.
+

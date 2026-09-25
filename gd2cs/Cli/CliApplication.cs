@@ -89,7 +89,7 @@ public static class CliApplication
             : Path.Combine(project.FullName, "scripts");
         var basePath = Path.Combine(scriptDirectory, scriptWithoutExtension);
         var projectIntegration = new GodotProjectIntegration(project.FullName);
-        var targets = ParseTargets(target, basePath, projectIntegration.IsCSharpProject());
+        var targets = ParseTargets(target, projectIntegration.IsCSharpProject());
         var transpiler = new Transpiler(
             godotTypes ?? GodotTypeCatalog.Load(project.FullName, godot?.FullName));
 
@@ -97,8 +97,10 @@ public static class CliApplication
         {
             var sourceExtension = outputLanguage == "cs" ? ".gd" : ".cs";
             var targetExtension = outputLanguage == "cs" ? ".cs" : ".gd";
-            var sourcePath = basePath + sourceExtension;
-            var targetPath = basePath + targetExtension;
+            var paths = ResolvePaths(project.FullName, basePath, scriptWithoutExtension, sourceExtension, targetExtension);
+            var sourcePath = paths.Source;
+            var targetPath = paths.Target;
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             transpiler.TranspileFile(sourcePath, targetPath);
 
             var sourceResourcePath = projectIntegration.ToResourcePath(sourcePath);
@@ -117,7 +119,9 @@ public static class CliApplication
                 sourceResourcePath,
                 targetResourcePath);
             projectIntegration.RewriteScriptReferences(sourceResourcePath, targetResourcePath);
-            if (outputLanguage == "cs")
+            if (paths.IsPaired)
+                ActivateFolder(Path.GetDirectoryName(sourcePath)!, Path.GetDirectoryName(targetPath)!);
+            else if (outputLanguage == "cs")
                 BackupSource(sourcePath);
             Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
             if (parseResult.GetValue(verboseOption))
@@ -127,16 +131,53 @@ public static class CliApplication
         return 0;
     }
 
-    private static List<string> ParseTargets(string? target, string basePath, bool isCSharpProject)
+    private static (string Source, string Target, bool IsPaired) ResolvePaths(
+        string projectPath,
+        string basePath,
+        string scriptWithoutExtension,
+        string sourceExtension,
+        string targetExtension)
+    {
+        var sourcePath = basePath + sourceExtension;
+        var sourceSuffix = sourceExtension[1..];
+        var targetSuffix = targetExtension[1..];
+        var sourceDirectory = Path.GetDirectoryName(basePath)!;
+
+        if (Path.GetFileName(sourceDirectory).EndsWith(sourceSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            var targetDirectory = sourceDirectory[..^(sourceSuffix.Length)] + targetSuffix;
+            return (sourcePath, Path.Combine(targetDirectory, Path.GetFileName(basePath) + targetExtension), true);
+        }
+
+        if (!File.Exists(sourcePath))
+        {
+            var scriptName = Path.GetFileName(scriptWithoutExtension);
+            var scriptsDirectory = Path.Combine(projectPath, "scripts");
+            var namedDirectory = Path.Combine(scriptsDirectory, scriptName + "-" + sourceSuffix);
+            var namedSource = Path.Combine(namedDirectory, scriptName + sourceExtension);
+            var useNamedDirectory = File.Exists(namedSource);
+            sourceDirectory = useNamedDirectory ? namedDirectory : Path.Combine(scriptsDirectory, sourceSuffix);
+            sourcePath = useNamedDirectory ? namedSource : Path.Combine(sourceDirectory, scriptName + sourceExtension);
+            var targetFolder = useNamedDirectory ? scriptName + "-" + targetSuffix : targetSuffix;
+            var targetDirectory = Path.Combine(scriptsDirectory, targetFolder);
+            return (sourcePath, Path.Combine(targetDirectory, scriptName + targetExtension), true);
+        }
+
+        return (sourcePath, basePath + targetExtension, false);
+    }
+
+    private static void ActivateFolder(string sourceDirectory, string targetDirectory)
+    {
+        File.WriteAllText(Path.Combine(sourceDirectory, ".gdignore"), string.Empty);
+        var targetIgnore = Path.Combine(targetDirectory, ".gdignore");
+        if (File.Exists(targetIgnore))
+            File.Delete(targetIgnore);
+    }
+
+    private static List<string> ParseTargets(string? target, bool isCSharpProject)
     {
         if (target is null)
-        {
-            var sourceExtension = isCSharpProject ? ".cs" : ".gd";
-            var targetLanguage = isCSharpProject ? "gd" : "cs";
-            if (File.Exists(basePath + sourceExtension))
-                return [targetLanguage];
-            throw new FileNotFoundException($"Neither '{basePath}.gd' nor '{basePath}.cs' exists.");
-        }
+            return [isCSharpProject ? "gd" : "cs"];
 
         var result = target.ToLowerInvariant()
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
