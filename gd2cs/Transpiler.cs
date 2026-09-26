@@ -37,8 +37,17 @@ public sealed class Transpiler
     {
         var sourceLanguage = LanguageFromExtension(sourcePath);
         var targetLanguage = LanguageFromExtension(targetPath);
-        var output = Transpile(File.ReadAllText(sourcePath), sourceLanguage, targetLanguage);
-        File.WriteAllText(targetPath, output);
+        var source = File.ReadAllText(sourcePath);
+        try
+        {
+            var output = Transpile(source, sourceLanguage, targetLanguage);
+            File.WriteAllText(targetPath, output);
+        }
+        catch (ParseException exception)
+        {
+            exception.SetSource(sourcePath, source);
+            throw;
+        }
     }
 
     public static ScriptLanguage LanguageFromExtension(string path) =>

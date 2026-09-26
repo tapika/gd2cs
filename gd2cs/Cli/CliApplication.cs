@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Diagnostics;
 using gd2cs.Language;
+using gd2cs.Parsing;
 using gd2cs.Project;
 
 namespace gd2cs.Cli;
@@ -54,18 +55,43 @@ public static class CliApplication
         command.Options.Add(resetOption);
         command.Options.Add(scriptOnlyOption);
         command.Options.Add(postBuildOption);
-        command.SetAction(parseResult => Run(
-            parseResult,
-            projectOption,
-            scriptOption,
-            targetOption,
-            godotOption,
-            verboseOption,
-            resetOption,
-            scriptOnlyOption,
-            postBuildOption,
-            godotTypes));
+        command.SetAction(parseResult => Execute(() => Run(
+                parseResult,
+                projectOption,
+                scriptOption,
+                targetOption,
+                godotOption,
+                verboseOption,
+                resetOption,
+                scriptOnlyOption,
+                postBuildOption,
+                godotTypes)));
         return command;
+    }
+
+    private static int Execute(Func<int> action)
+    {
+        try
+        {
+            return action();
+        }
+        catch (ParseException exception)
+        {
+            var path = exception.SourcePath ?? "gd2cs";
+            Console.Error.WriteLine($"{path}({exception.Line},{exception.Column}): error: {exception.Message}");
+            if (exception.SourceLine is not null)
+            {
+                Console.Error.WriteLine(exception.SourceLine);
+                var prefix = exception.SourceLine[..Math.Min(exception.Column - 1, exception.SourceLine.Length)];
+                Console.Error.WriteLine(string.Concat(prefix.Select(character => character == '\t' ? '\t' : ' ')) + "^");
+            }
+            return 1;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"gd2cs: error: {exception.Message}");
+            return 1;
+        }
     }
 
     private static int Run(
