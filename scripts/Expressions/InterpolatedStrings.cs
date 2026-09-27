@@ -11,6 +11,7 @@ public partial class InterpolatedStrings : RefCounted
 		var precise = $"{text}: {ratio:F2}";
 		var percent = $"{text}: 100%";
 		var braces = $"{{{text}}}";
+		var currency = $"€{text}";
 		return precise;
 	}
 }

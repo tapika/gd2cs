@@ -1,3 +1,4 @@
+using System.Text;
 using gd2cs.Emission;
 using gd2cs.Language;
 using gd2cs.Model;
@@ -37,11 +38,15 @@ public sealed class Transpiler
     {
         var sourceLanguage = LanguageFromExtension(sourcePath);
         var targetLanguage = LanguageFromExtension(targetPath);
-        var source = File.ReadAllText(sourcePath);
+        var bytes = File.ReadAllBytes(sourcePath);
+        var preamble = Encoding.UTF8.Preamble;
+        var hasPreamble = bytes.AsSpan().StartsWith(preamble);
+        var offset = hasPreamble ? preamble.Length : 0;
+        var source = new UTF8Encoding(false, true).GetString(bytes, offset, bytes.Length - offset);
         try
         {
             var output = Transpile(source, sourceLanguage, targetLanguage);
-            File.WriteAllText(targetPath, output);
+            File.WriteAllText(targetPath, output, new UTF8Encoding(hasPreamble));
         }
         catch (ParseException exception)
         {

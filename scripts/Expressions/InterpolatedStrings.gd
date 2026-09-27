@@ -7,4 +7,5 @@ func format(text: String, count: int, ratio: float) -> String:
 	var precise := "%s: %.2f" % [text, ratio]
 	var percent := "%s: 100%%" % [text]
 	var braces := "{%s}" % [text]
+	var currency := "€%s" % [text]
 	return precise

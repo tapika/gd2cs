@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace gd2cs.Tests;
 
 public sealed class TranspilerTests
@@ -33,6 +35,33 @@ public sealed class TranspilerTests
 
         Assert.DoesNotContain("\n", generatedCs.Replace("\r\n", string.Empty));
         Assert.DoesNotContain("\r", generatedGd);
+    }
+
+    [Theory]
+    [InlineData(".gd", ".cs", false)]
+    [InlineData(".gd", ".cs", true)]
+    [InlineData(".cs", ".gd", false)]
+    [InlineData(".cs", ".gd", true)]
+    public void Utf8IsPreserved(string sourceExtension, string targetExtension, bool emitUTF8Identifier)
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"gd2cs-{Guid.NewGuid():N}{sourceExtension}");
+        var targetPath = Path.ChangeExtension(sourcePath, targetExtension);
+        try
+        {
+            var source = File.ReadAllText(Fixture("Expressions/InterpolatedStrings" + sourceExtension));
+            File.WriteAllText(sourcePath, source, new UTF8Encoding(emitUTF8Identifier));
+
+            new Transpiler().TranspileFile(sourcePath, targetPath);
+
+            var output = File.ReadAllBytes(targetPath);
+            Assert.Equal(emitUTF8Identifier, output.AsSpan().StartsWith(Encoding.UTF8.Preamble));
+            Assert.Contains("€", File.ReadAllText(targetPath, Encoding.UTF8));
+        }
+        finally
+        {
+            File.Delete(sourcePath);
+            File.Delete(targetPath);
+        }
     }
 
     [Theory]
