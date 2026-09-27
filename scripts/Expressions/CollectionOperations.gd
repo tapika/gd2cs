@@ -6,6 +6,7 @@ class CustomValue:
 		return 4
 
 var Values := [1, 2, 3]
+var CustomValues : Array[CustomValue]
 var Entries : Dictionary[String, int]
 var Custom : CustomValue
 
@@ -17,6 +18,8 @@ func inspect():
 	var valuesPresent : bool = not Values.is_empty()
 
 	var localValues := Values
+	var selectedValue : CustomValue = CustomValues[0]
+	var createdValue := CustomValue.new()
 	localValues.append(4)
 	Values.clear()
 	Entries.clear()

@@ -298,7 +298,16 @@ public sealed record LocalVariableStatement(
     string Name,
     TypeReference? Type,
     Expression? Initializer,
-    bool IsInferred) : Statement;
+    LocalTyping Typing) : Statement;
+
+// Separates dynamic assignment from static types expressed explicitly or inferred by GDScript.
+public enum LocalTyping
+{
+    Dynamic,
+    Inferred,
+    InferredWithExplicitGdType,
+    Explicit
+}
 
 // Iterates over a collection while preserving the ordered nested body.
 public sealed record ForEachStatement(

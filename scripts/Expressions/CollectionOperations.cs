@@ -13,6 +13,7 @@ public partial class CollectionOperations : RefCounted
 	}
 
 	public Godot.Collections.Array<int> Values = gdArray(1, 2, 3);
+	public Godot.Collections.Array<CustomValue> CustomValues;
 	public Godot.Collections.Dictionary<string, int> Entries;
 	public CustomValue Custom;
 
@@ -25,6 +26,8 @@ public partial class CollectionOperations : RefCounted
 		bool valuesPresent = Values.Count != 0;
 
 		var localValues = Values;
+		var selectedValue = CustomValues[0];
+		var createdValue = new CustomValue();
 		localValues.Add(4);
 		Values.Clear();
 		Entries.Clear();

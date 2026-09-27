@@ -244,7 +244,11 @@ public sealed class CSharpParser : IScriptParser
                     initializer = null;
                 tokens.Expect(TokenKind.Semicolon);
                 EndOfLine();
-                elements.Add(new LocalVariableStatement(name, type, initializer, isInferred));
+                elements.Add(new LocalVariableStatement(
+                    name,
+                    type,
+                    initializer,
+                    isInferred ? LocalTyping.Inferred : LocalTyping.Explicit));
                 continue;
             }
             var expression = ParseExpression();

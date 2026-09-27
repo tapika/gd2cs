@@ -158,13 +158,17 @@ public sealed class GdScriptParser : IScriptParser
             if (tokens.TryConsume(TokenKind.Identifier, "var"))
             {
                 var localName = tokens.Expect(TokenKind.Identifier).Text;
-                tokens.Expect(TokenKind.Colon);
-                // In := the colon is followed immediately by equals instead of a type.
-                var isInferred = tokens.TryConsume(TokenKind.Equals);
-                var type = isInferred ? null : ParseType();
-                var hasInitializer = isInferred || tokens.TryConsume(TokenKind.Equals);
+                var hasColon = tokens.TryConsume(TokenKind.Colon);
+                // := requests inference, while = deliberately leaves the local dynamically typed.
+                var typing = LocalTyping.Dynamic;
+                if (hasColon)
+                    typing = tokens.TryConsume(TokenKind.Equals)
+                        ? LocalTyping.Inferred
+                        : LocalTyping.Explicit;
+                var type = typing == LocalTyping.Explicit ? ParseType() : null;
+                var hasInitializer = typing == LocalTyping.Inferred || tokens.TryConsume(TokenKind.Equals);
                 var initializer = hasInitializer ? ParseExpression() : null;
-                elements.Add(new LocalVariableStatement(localName, type, initializer, isInferred));
+                elements.Add(new LocalVariableStatement(localName, type, initializer, typing));
                 EndOfLine(optional: true);
                 continue;
             }

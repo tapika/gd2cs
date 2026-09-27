@@ -160,10 +160,7 @@ internal sealed class SemanticNormalizer
         {
             Expression = NormalizeExpression(statement.Expression, scope)
         },
-        LocalVariableStatement statement => statement with
-        {
-            Initializer = statement.Initializer is null ? null : NormalizeExpression(statement.Initializer, scope)
-        },
+        LocalVariableStatement statement => NormalizeLocal(statement, scope),
         ForEachStatement statement => NormalizeForEach(statement, scope),
         WhileStatement statement => statement with
         {
@@ -172,6 +169,37 @@ internal sealed class SemanticNormalizer
         },
         ConditionalStatement statement => NormalizeConditional(statement, scope),
         _ => element
+    };
+
+    // Retains static typing when GDScript cannot infer it from the emitted expression.
+    private LocalVariableStatement NormalizeLocal(LocalVariableStatement statement, BindingScope scope)
+    {
+        var initializer = statement.Initializer is null
+            ? null
+            : NormalizeExpression(statement.Initializer, scope);
+        var type = statement.Type ?? ResolveType(initializer, scope);
+        var typing = statement.Typing;
+        if (typing == LocalTyping.Inferred && !CanGdScriptInfer(initializer))
+            typing = type is null ? LocalTyping.Dynamic : LocalTyping.InferredWithExplicitGdType;
+        else if (language == ScriptLanguage.GdScript &&
+                 typing == LocalTyping.Explicit &&
+                 initializer is not null &&
+                 !CanGdScriptInfer(initializer))
+            typing = LocalTyping.InferredWithExplicitGdType;
+        return statement with
+        {
+            Type = type,
+            Initializer = initializer,
+            Typing = typing
+        };
+    }
+
+    // Indexed collection access can remain Variant to Godot even when the neutral model knows T.
+    private static bool CanGdScriptInfer(Expression? expression) => expression switch
+    {
+        IndexExpression => false,
+        ParenthesizedExpression parenthesized => CanGdScriptInfer(parenthesized.Expression),
+        _ => true
     };
 
     // Derives a loop variable from the collection element type when it is available.

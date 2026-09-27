@@ -404,7 +404,11 @@ public sealed class CSharpEmitter : IScriptEmitter
                     break;
                 case LocalVariableStatement statement:
                     output.Append(indent);
-                    if (statement.IsInferred)
+                    var useVar = statement.Typing is
+                        LocalTyping.Inferred or
+                        LocalTyping.InferredWithExplicitGdType or
+                        LocalTyping.Dynamic;
+                    if (useVar)
                         output.Append("var");
                     else
                         EmitType(output, statement.Type ?? throw new InvalidOperationException("Explicit local requires a type."));

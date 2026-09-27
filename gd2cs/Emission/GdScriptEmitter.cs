@@ -217,9 +217,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 case LocalVariableStatement statement:
                     output.Append(indent + "var ");
                     output.Append(statement.Name);
-                    if (statement.IsInferred)
+                    if (statement.Typing == LocalTyping.Inferred)
                         output.Append(" := ");
-                    else
+                    else if (statement.Typing is LocalTyping.Explicit or LocalTyping.InferredWithExplicitGdType)
                     {
                         output.Append(space_colon);
                         EmitType(output, statement.Type ?? throw new InvalidOperationException("Explicit local requires a type."));
@@ -230,6 +230,8 @@ public sealed class GdScriptEmitter : IScriptEmitter
                         }
                         output.Append(" = ");
                     }
+                    else
+                        output.Append(" = ");
                     EmitExpression(output, statement.Initializer ?? throw new InvalidOperationException("Inferred local requires a value."), indent);
                     output.AppendLine();
                     break;
