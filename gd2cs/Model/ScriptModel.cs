@@ -256,7 +256,15 @@ public sealed record MethodDeclaration(
     TypeReference ReturnType,
     ParameterList Parameters,
     List<SyntaxElement> Elements,
-    bool IsStatic = false) : CallableDeclaration(Parameters, Elements);
+    bool IsStatic = false,
+    MethodKind Kind = MethodKind.Ordinary) : CallableDeclaration(Parameters, Elements);
+
+// Identifies methods whose names and modifiers differ between the two languages.
+public enum MethodKind
+{
+    Ordinary,
+    StringConversion
+}
 
 // Maps a C# finalizer to the supported GDScript cleanup function.
 public sealed record DestructorDeclaration(

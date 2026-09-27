@@ -79,6 +79,7 @@ public sealed class CSharpParser : IScriptParser
 
             tokens.TryConsume(TokenKind.Identifier, "public");
             var isStatic = tokens.TryConsume(TokenKind.Identifier, "static");
+            var isOverride = tokens.TryConsume(TokenKind.Identifier, "override");
             var isReadonly = isStatic && tokens.TryConsume(TokenKind.Identifier, "readonly");
             if (tokens.Current.Text == name && tokens.Peek.Kind == TokenKind.OpenParenthesis)
             {
@@ -104,7 +105,7 @@ public sealed class CSharpParser : IScriptParser
                 continue;
             }
             elements.Add(tokens.Current.Kind == TokenKind.OpenParenthesis
-                ? ParseMethod(type, memberName, isStatic)
+                ? ParseMethod(type, memberName, isStatic, isOverride)
                 : ParseScalarAfterName(type, memberName));
         }
 
@@ -116,10 +117,14 @@ public sealed class CSharpParser : IScriptParser
     private static NestedClassDeclaration ToNested(ClassDeclaration declaration) =>
         new(declaration.Name, declaration.BaseType, declaration.Elements);
 
-    private MethodDeclaration ParseMethod(TypeReference returnType, string name, bool isStatic)
+    private MethodDeclaration ParseMethod(TypeReference returnType, string name, bool isStatic, bool isOverride)
     {
         var callable = ParseCallable();
-        return new MethodDeclaration(name, returnType, callable.Parameters, callable.Elements, isStatic);
+        if (!isOverride)
+            return new MethodDeclaration(name, returnType, callable.Parameters, callable.Elements, isStatic);
+        if (name != "ToString" || returnType.Kind != TypeKind.String || callable.Parameters.Parameters.Count != 0)
+            throw new NotSupportedException("Unsupported language dialect.");
+        return new MethodDeclaration(name, returnType, callable.Parameters, callable.Elements, false, MethodKind.StringConversion);
     }
 
     private FieldDeclaration ParseScalarAfterName(TypeReference type, string name)

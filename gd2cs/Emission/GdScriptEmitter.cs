@@ -107,7 +107,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                         output.Append(memberIndent + "static func ");
                     else
                         output.Append(memberIndent + "func ");
-                    output.Append(method.Name);
+                    output.Append(method.Kind == MethodKind.StringConversion ? "_to_string" : method.Name);
                     EmitParameters(output, method.Parameters, memberIndent);
                     if (method.ReturnType.Kind != TypeKind.Void)
                     {

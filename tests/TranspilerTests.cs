@@ -83,7 +83,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(13, r.Count);
+        Assert.Equal(14, r.Count);
         return r;
     }
 

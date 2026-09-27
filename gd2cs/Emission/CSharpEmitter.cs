@@ -78,9 +78,11 @@ public sealed class CSharpEmitter : IScriptEmitter
                     output.Append(indent + "    public ");
                     if (method.IsStatic)
                         output.Append("static ");
+                    if (method.Kind == MethodKind.StringConversion)
+                        output.Append("override ");
                     EmitType(output, method.ReturnType);
                     output.Append(' ');
-                    output.Append(method.Name);
+                    output.Append(method.Kind == MethodKind.StringConversion ? "ToString" : method.Name);
                     EmitCallable(output, method, indent);
                     break;
                 case DestructorDeclaration destructor:

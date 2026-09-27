@@ -93,7 +93,9 @@ public sealed class GdScriptParser : IScriptParser
             return new ConstructorDeclaration(parameters, elements);
         if (name == "_exit_tree")
             return new DestructorDeclaration(elements);
-        return new MethodDeclaration(name, returnType, parameters, elements, isStatic);
+        var kind = name == "_to_string" ? MethodKind.StringConversion : MethodKind.Ordinary;
+        var neutralName = kind == MethodKind.StringConversion ? "ToString" : name;
+        return new MethodDeclaration(neutralName, returnType, parameters, elements, isStatic, kind);
     }
 
     // Reads ordered body elements until indentation returns to the owning declaration.
