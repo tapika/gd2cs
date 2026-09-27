@@ -39,3 +39,17 @@ This adds an idempotent target to the generated or existing `.csproj`. After eac
 
 This way it's possible to observe that you will not break `.gd` script due to `gd2cs` non-supported C# languages features.
 
+## Unsupported language features
+
+### C# object initializers
+
+C# can assign properties as part of object construction:
+
+```csharp
+var value = new Example
+{
+    Name = "sample"
+};
+```
+
+GDScript has no equivalent object-initializer syntax, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
