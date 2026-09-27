@@ -7,10 +7,10 @@ var Value := 0
 
 # Initializes the instance.
 func _init(value: int, label: String):
-	Value = value
+	self.Value = value
 
 	# Store the descriptive text too.
-	Label = label
+	self.Label = label
 
 # Text declared between callables.
 # Its position must be preserved.
@@ -29,8 +29,8 @@ func forward(target: Callables, value: int):
 		value,
 		target.Label
 	)
-	update(
-		copy,
+	copy.update(
+		self,
 		value
 	)
 	apply(value,

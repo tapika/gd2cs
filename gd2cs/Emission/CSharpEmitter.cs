@@ -135,6 +135,9 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case CurrentInstanceExpression:
+                output.Append("this");
+                break;
             case ValueExpression value:
                 output.Append(value.Text);
                 if (value.Text.Length > 0 && char.IsDigit(value.Text[0]) && value.Text.Contains('.') && !value.Text.EndsWith('f'))

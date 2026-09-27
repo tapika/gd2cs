@@ -69,7 +69,7 @@ internal sealed class SemanticNormalizer
                 methods.Add(method.Name);
         }
 
-        var scope = new BindingScope(members, methods);
+        var scope = new BindingScope(members, methods, declaration.BaseType);
         var elements = new List<SyntaxElement>();
         foreach (var element in declaration.Elements)
             elements.Add(NormalizeClassElement(element, scope));
@@ -468,6 +468,7 @@ internal sealed class SemanticNormalizer
     // Infers only types needed for safe downstream collection binding.
     private static TypeReference? ResolveType(Expression? expression, BindingScope scope) => expression switch
     {
+        CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,
         ObjectCreationExpression creation => creation.Type,
@@ -495,11 +496,15 @@ internal sealed class SemanticNormalizer
 
         public BindingScope(
             Dictionary<string, TypeReference> members,
-            HashSet<string> methods)
+            HashSet<string> methods,
+            TypeReference currentInstanceType)
         {
             this.members = members;
             this.methods = methods;
+            CurrentInstanceType = currentInstanceType;
         }
+
+        public TypeReference CurrentInstanceType { get; }
 
         public bool IsUserMethod(string name) => methods.Contains(name);
 

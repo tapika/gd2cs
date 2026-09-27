@@ -93,6 +93,9 @@ public abstract record Expression;
 // Preserves the canonical text of a scalar literal or identifier expression.
 public sealed record ValueExpression(string Text) : Expression;
 
+// Refers to the current class instance independently of C# this and GDScript self.
+public sealed record CurrentInstanceExpression : Expression;
+
 // Represents a scalar conversion independently of each language's cast syntax.
 public sealed record ConversionExpression(
     TypeReference Type,

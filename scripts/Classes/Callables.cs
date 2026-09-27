@@ -11,10 +11,10 @@ public partial class Callables : RefCounted
 	// Initializes the instance.
 	public Callables(int value, string label)
 	{
-		Value = value;
+		this.Value = value;
 
 		// Store the descriptive text too.
-		Label = label;
+		this.Label = label;
 	}
 
 	// Text declared between callables.
@@ -37,8 +37,8 @@ public partial class Callables : RefCounted
 			value,
 			target.Label
 		);
-		update(
-			copy,
+		copy.update(
+			this,
 			value
 		);
 		apply(value,

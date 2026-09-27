@@ -439,6 +439,8 @@ public sealed class GdScriptParser : IScriptParser
         tokens.Expect(value.Kind);
         if (value.Kind != TokenKind.Identifier)
             return new ValueExpression(value.Text);
+        if (value.Text == "self")
+            return new CurrentInstanceExpression();
         return new ValueExpression(value.Text);
     }
 

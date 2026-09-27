@@ -283,6 +283,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case CurrentInstanceExpression:
+                output.Append("self");
+                break;
             case ValueExpression value:
                 output.Append(value.Text);
                 break;

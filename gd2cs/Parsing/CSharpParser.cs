@@ -489,6 +489,8 @@ public sealed class CSharpParser : IScriptParser
         var value = ConsumeValue();
         if (value.Kind != TokenKind.Identifier)
             return new ValueExpression(value.Text.TrimEnd('f', 'F'));
+        if (value.Text == "this")
+            return new CurrentInstanceExpression();
         return new ValueExpression(value.Text);
     }
 
