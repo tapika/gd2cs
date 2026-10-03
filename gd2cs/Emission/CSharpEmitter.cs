@@ -146,6 +146,10 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append(".Call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
+            case CallableNullExpression nullCheck:
+                EmitExpression(output, nullCheck.Target, indent);
+                output.Append(".Delegate is null");
+                break;
             case CurrentInstanceExpression:
                 output.Append("this");
                 break;
@@ -194,6 +198,12 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, binary.Right, indent);
                 break;
             case UnaryExpression unary:
+                if (unary is { Operator: "not", Operand: CallableNullExpression callableNull })
+                {
+                    EmitExpression(output, callableNull.Target, indent);
+                    output.Append(".Delegate is not null");
+                    break;
+                }
                 if (unary is { Operator: "not", Operand: CollectionOperationExpression { Operation: CollectionOperation.IsEmpty } empty })
                 {
                     EmitExpression(output, empty.Target, indent);

@@ -8,8 +8,11 @@ func replace():
 	callback = Callable()
 	callback = func (value: int):
 		self.Value = value
-	callback.call(3)
+	if not callback.is_null():
+		callback.call(3)
 	callback = Callable()
+	if callback.is_null():
+		self.Value = 0
 
 func evaluate(offset: int) -> Variant:
 	var sum : Callable = func (left: int, right: int) -> int:

@@ -412,8 +412,21 @@ public sealed class CSharpParser : IScriptParser
     private Expression ParseExpression(int minimumPrecedence = 0)
     {
         var left = ParseUnaryExpression();
-        while (OperatorPrecedence(tokens.Current) >= minimumPrecedence)
+        while (true)
         {
+            if (minimumPrecedence <= 2 && tokens.TryConsume(TokenKind.Identifier, "is"))
+            {
+                var isNotNull = tokens.TryConsume(TokenKind.Identifier, "not");
+                tokens.Expect(TokenKind.Identifier, "null");
+                if (left is not MemberAccessExpression { Member: "Delegate" } member)
+                    throw new ParseException("Callable null check requires Delegate", tokens.Current.Line, tokens.Current.Column);
+                left = new CallableNullExpression(member.Target);
+                if (isNotNull)
+                    left = new UnaryExpression("not", left);
+                continue;
+            }
+            if (OperatorPrecedence(tokens.Current) < minimumPrecedence)
+                break;
             var operatorToken = tokens.Current;
             var precedence = OperatorPrecedence(operatorToken);
             tokens.Expect(operatorToken.Kind, operatorToken.Text);

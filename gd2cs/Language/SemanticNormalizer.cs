@@ -313,6 +313,10 @@ internal sealed class SemanticNormalizer
                 Target = NormalizeExpression(callable.Target, scope),
                 Arguments = NormalizeArguments(callable.Arguments, scope)
             },
+            CallableNullExpression callable => callable with
+            {
+                Target = NormalizeExpression(callable.Target, scope)
+            },
             ObjectCreationExpression creation => creation with
             {
                 Arguments = NormalizeArguments(creation.Arguments, scope),
@@ -412,6 +416,11 @@ internal sealed class SemanticNormalizer
         if (receiverType.Kind == TypeKind.Callable &&
             member.Member == (language == ScriptLanguage.CSharp ? "Call" : "call"))
             return new CallableInvocationExpression(member.Target, arguments);
+        if (language == ScriptLanguage.GdScript &&
+            receiverType.Kind == TypeKind.Callable &&
+            member.Member == "is_null" &&
+            arguments.Arguments.Count == 0)
+            return new CallableNullExpression(member.Target);
         if (CollectionMappings.TryInvocation(
                 language,
                 receiverType.Kind,
@@ -523,6 +532,7 @@ internal sealed class SemanticNormalizer
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
+        CallableNullExpression => new TypeReference("bool"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,

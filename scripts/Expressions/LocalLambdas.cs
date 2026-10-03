@@ -14,8 +14,15 @@ public partial class LocalLambdas : RefCounted
 		{
 			this.Value = value;
 		});
-		callback.Call(3);
+		if (callback.Delegate is not null)
+		{
+			callback.Call(3);
+		}
 		callback = default;
+		if (callback.Delegate is null)
+		{
+			this.Value = 0;
+		}
 	}
 
 	public Variant evaluate(int offset)

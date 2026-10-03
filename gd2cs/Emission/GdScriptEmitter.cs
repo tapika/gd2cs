@@ -300,6 +300,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(".call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
+            case CallableNullExpression nullCheck:
+                EmitExpression(output, nullCheck.Target, indent);
+                output.Append(".is_null()");
+                break;
             case CurrentInstanceExpression:
                 output.Append("self");
                 break;

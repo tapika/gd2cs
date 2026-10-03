@@ -111,6 +111,9 @@ public sealed record CallableInvocationExpression(
     Expression Target,
     ArgumentList Arguments) : Expression;
 
+// Tests whether a Callable has no target independently of each language's API spelling.
+public sealed record CallableNullExpression(Expression Target) : Expression;
+
 // Represents a scalar conversion independently of each language's cast syntax.
 public sealed record ConversionExpression(
     TypeReference Type,
