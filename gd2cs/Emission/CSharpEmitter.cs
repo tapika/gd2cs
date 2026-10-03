@@ -135,6 +135,9 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case TypeDefaultExpression:
+                output.Append("default");
+                break;
             case LambdaExpression lambda:
                 EmitLambda(output, lambda, indent);
                 break;
@@ -396,7 +399,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     }
 
     // Reconstructs parameter line breaks independently from the callable body.
-    private static void EmitParameters(StringBuilder output, ParameterList parameters, string indent)
+    private void EmitParameters(StringBuilder output, ParameterList parameters, string indent)
     {
         output.Append('(');
         for (var index = 0; index < parameters.Parameters.Count; index++)
@@ -413,6 +416,11 @@ public sealed class CSharpEmitter : IScriptEmitter
             EmitType(output, parameters.Parameters[index].Type);
             output.Append(' ');
             output.Append(parameters.Parameters[index].Name);
+            if (parameters.Parameters[index].DefaultValue is { } defaultValue)
+            {
+                output.Append(" = ");
+                EmitExpression(output, defaultValue, indent);
+            }
         }
         if (parameters.ClosingParenthesisStartsOnNewLine)
         {

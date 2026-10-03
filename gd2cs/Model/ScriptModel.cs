@@ -96,6 +96,9 @@ public sealed record ValueExpression(string Text) : Expression;
 // Refers to the current class instance independently of C# this and GDScript self.
 public sealed record CurrentInstanceExpression : Expression;
 
+// Represents the empty value of a Godot value type, such as an unset Callable.
+public sealed record TypeDefaultExpression(TypeReference Type) : Expression;
+
 // Stores a local Callable lambda using the same parameters and ordered body as named methods.
 public sealed record LambdaExpression(
     ParameterList Parameters,
@@ -294,7 +297,8 @@ public sealed record ParameterList(
 public sealed record ParameterDeclaration(
     string Name,
     TypeReference Type,
-    bool StartsOnNewLine = false);
+    bool StartsOnNewLine = false,
+    Expression? DefaultValue = null);
 
 // Provides the language-neutral base for callable-body operations.
 public abstract record Statement : SyntaxElement;

@@ -86,10 +86,12 @@ internal sealed class SemanticNormalizer
         NestedClassDeclaration nested => NormalizeNestedClass(nested),
         ConstructorDeclaration constructor => constructor with
         {
+            Parameters = NormalizeParameters(constructor.Parameters, scope),
             Elements = NormalizeCallable(constructor.Parameters, constructor.Elements, scope)
         },
         MethodDeclaration method => method with
         {
+            Parameters = NormalizeParameters(method.Parameters, scope),
             Elements = NormalizeCallable(method.Parameters, method.Elements, scope)
         },
         DestructorDeclaration destructor => destructor with
@@ -104,6 +106,36 @@ internal sealed class SemanticNormalizer
     {
         var normalized = NormalizeClass(new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements));
         return nested with { Elements = normalized.Elements };
+    }
+
+    // Normalizes optional values without making later parameters visible to earlier defaults.
+    private ParameterList NormalizeParameters(ParameterList parameters, BindingScope scope) => parameters with
+    {
+        Parameters = parameters.Parameters.Select(parameter => parameter with
+        {
+            DefaultValue = NormalizeParameterDefault(parameter, scope)
+        }).ToList()
+    };
+
+    // C# default and GDScript's empty built-in constructor denote the same parameter value.
+    // Callable is a value type: null is not a valid replacement for an empty Callable().
+    private Expression? NormalizeParameterDefault(ParameterDeclaration parameter, BindingScope scope)
+    {
+        var value = parameter.DefaultValue;
+        if (value is null)
+            return null;
+        var isEmptyValueType = parameter.Type.Kind is TypeKind.Callable or TypeKind.StringName or TypeKind.NodePath;
+        if (isEmptyValueType)
+        {
+            if (value is ValueExpression { Text: "default" })
+                return new TypeDefaultExpression(parameter.Type);
+            if (value is InvocationExpression invocation &&
+                invocation.Target is ValueExpression target &&
+                target.Text == parameter.Type.Name &&
+                invocation.Arguments.Arguments.Count == 0)
+                return new TypeDefaultExpression(parameter.Type);
+        }
+        return NormalizeExpression(value, scope);
     }
 
     // Parameters and locals live only for the duration of their owning callable.
@@ -269,6 +301,7 @@ internal sealed class SemanticNormalizer
             // captured locals is outside this translation subset; shared object mutation is valid.
             LambdaExpression lambda => lambda with
             {
+                Parameters = NormalizeParameters(lambda.Parameters, scope),
                 Elements = NormalizeCallable(lambda.Parameters, lambda.Elements, scope)
             },
             CallableInvocationExpression callable => callable with

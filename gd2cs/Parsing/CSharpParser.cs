@@ -155,7 +155,8 @@ public sealed class CSharpParser : IScriptParser
             {
                 var type = ParseType();
                 var name = tokens.Expect(TokenKind.Identifier).Text;
-                parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine));
+                var defaultValue = tokens.TryConsume(TokenKind.Equals) ? ParseExpression() : null;
+                parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine, defaultValue));
                 if (!tokens.TryConsume(TokenKind.Comma))
                 {
                     var closingOnNewLine = tokens.TryConsume(TokenKind.NewLine);
@@ -521,7 +522,8 @@ public sealed class CSharpParser : IScriptParser
                 : types.ElementAtOrDefault(parameters.Count)
                     ?? throw new ParseException("Lambda parameter requires a type", tokens.Current.Line, tokens.Current.Column);
             var name = tokens.Expect(TokenKind.Identifier).Text;
-            parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine));
+            var defaultValue = tokens.TryConsume(TokenKind.Equals) ? ParseExpression() : null;
+            parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine, defaultValue));
             if (!tokens.TryConsume(TokenKind.Comma))
                 break;
             startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);

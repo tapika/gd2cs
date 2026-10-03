@@ -140,7 +140,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
     }
 
     // Reconstructs parameter line breaks independently from the callable body.
-    private static void EmitParameters(StringBuilder output, ParameterList parameters, string indent)
+    private void EmitParameters(StringBuilder output, ParameterList parameters, string indent)
     {
         output.Append('(');
         for (var index = 0; index < parameters.Parameters.Count; index++)
@@ -157,6 +157,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
             output.Append(parameters.Parameters[index].Name);
             output.Append(colon);
             EmitType(output, parameters.Parameters[index].Type);
+            if (parameters.Parameters[index].DefaultValue is { } defaultValue)
+            {
+                output.Append(" = ");
+                EmitExpression(output, defaultValue, indent);
+            }
         }
         if (parameters.ClosingParenthesisStartsOnNewLine)
         {
@@ -283,6 +288,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case TypeDefaultExpression defaultValue:
+                EmitType(output, defaultValue.Type);
+                output.Append("()");
+                break;
             case LambdaExpression lambda:
                 EmitLambda(output, lambda, indent);
                 break;

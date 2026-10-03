@@ -250,7 +250,8 @@ public sealed class GdScriptParser : IScriptParser
             var name = tokens.Expect(TokenKind.Identifier).Text;
             tokens.Expect(TokenKind.Colon);
             var type = ParseType();
-            result.Add(new ParameterDeclaration(name, type, startsOnNewLine));
+            var defaultValue = tokens.TryConsume(TokenKind.Equals) ? ParseExpression() : null;
+            result.Add(new ParameterDeclaration(name, type, startsOnNewLine, defaultValue));
             if (!tokens.TryConsume(TokenKind.Comma))
             {
                 var closingOnNewLine = tokens.TryConsume(TokenKind.NewLine);
