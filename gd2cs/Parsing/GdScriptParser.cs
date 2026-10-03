@@ -167,7 +167,9 @@ public sealed class GdScriptParser : IScriptParser
                         : LocalTyping.Explicit;
                 var type = typing == LocalTyping.Explicit ? ParseType() : null;
                 var hasInitializer = typing == LocalTyping.Inferred || tokens.TryConsume(TokenKind.Equals);
-                var initializer = hasInitializer ? ParseExpression() : null;
+                var initializer = hasInitializer
+                    ? tokens.Current.Text == "func" ? ParseLambda(statementColumn) : ParseExpression()
+                    : null;
                 elements.Add(new LocalVariableStatement(localName, type, initializer, typing));
                 EndOfLine(optional: true);
                 continue;
@@ -427,6 +429,8 @@ public sealed class GdScriptParser : IScriptParser
 
     private Expression ParsePrimaryExpression()
     {
+        if (tokens.Current.Text == "func")
+            return ParseLambda(tokens.Current.Column);
         if (tokens.Current.Kind == TokenKind.OpenBracket)
             return ParseArray();
         if (tokens.TryConsume(TokenKind.OpenParenthesis))
@@ -442,6 +446,30 @@ public sealed class GdScriptParser : IScriptParser
         if (value.Text == "self")
             return new CurrentInstanceExpression();
         return new ValueExpression(value.Text);
+    }
+
+    // Multiline lambda bodies end at the owning declaration's indentation, not the func column.
+    private LambdaExpression ParseLambda(int declarationColumn)
+    {
+        tokens.Expect(TokenKind.Identifier, "func");
+        tokens.Expect(TokenKind.OpenParenthesis);
+        var parameters = ParseParameters();
+        var returnType = tokens.TryConsume(TokenKind.Arrow) ? ParseType() : new TypeReference("void");
+        tokens.Expect(TokenKind.Colon);
+        var isInline = !tokens.TryConsume(TokenKind.NewLine);
+        List<SyntaxElement> elements;
+        if (isInline)
+        {
+            var isReturn = tokens.TryConsume(TokenKind.Identifier, "return");
+            var value = ParseExpression();
+            elements = new List<SyntaxElement>
+            {
+                isReturn ? new ReturnStatement(value) : new ExpressionStatement(value)
+            };
+        }
+        else
+            elements = ParseBody(declarationColumn);
+        return new LambdaExpression(parameters, returnType, elements, isInline);
     }
 
     // Splits GDScript percent formatting into language-neutral text and value parts.

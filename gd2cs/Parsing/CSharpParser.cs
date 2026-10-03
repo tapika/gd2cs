@@ -468,6 +468,8 @@ public sealed class CSharpParser : IScriptParser
 
     private Expression ParsePrimaryExpression()
     {
+        if (tokens.Current.Text == "Callable" && tokens.Peek.Kind == TokenKind.Dot)
+            return ParseLambda();
         if (tokens.Current.Kind == TokenKind.InterpolatedString)
             return ParseInterpolatedString(tokens.Expect(TokenKind.InterpolatedString).Text);
         if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text == "float")
@@ -492,6 +494,62 @@ public sealed class CSharpParser : IScriptParser
         if (value.Text == "this")
             return new CurrentInstanceExpression();
         return new ValueExpression(value.Text);
+    }
+
+    // Callable.From generic arguments supply parameter/result types for an untyped C# lambda.
+    private LambdaExpression ParseLambda()
+    {
+        tokens.Expect(TokenKind.Identifier, "Callable");
+        tokens.Expect(TokenKind.Dot);
+        tokens.Expect(TokenKind.Identifier, "From");
+        var types = new List<TypeReference>();
+        if (tokens.TryConsume(TokenKind.LessThan))
+        {
+            do
+                types.Add(ParseType());
+            while (tokens.TryConsume(TokenKind.Comma));
+            tokens.Expect(TokenKind.GreaterThan);
+        }
+        tokens.Expect(TokenKind.OpenParenthesis);
+        tokens.Expect(TokenKind.OpenParenthesis);
+        var parameters = new List<ParameterDeclaration>();
+        var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
+        while (tokens.Current.Kind != TokenKind.CloseParenthesis)
+        {
+            var type = tokens.Peek.Kind == TokenKind.Identifier
+                ? ParseType()
+                : types.ElementAtOrDefault(parameters.Count)
+                    ?? throw new ParseException("Lambda parameter requires a type", tokens.Current.Line, tokens.Current.Column);
+            var name = tokens.Expect(TokenKind.Identifier).Text;
+            parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine));
+            if (!tokens.TryConsume(TokenKind.Comma))
+                break;
+            startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
+        }
+        var closingOnNewLine = tokens.TryConsume(TokenKind.NewLine);
+        tokens.Expect(TokenKind.CloseParenthesis);
+        tokens.Expect(TokenKind.LambdaArrow);
+        var returnType = types.Count == parameters.Count + 1 ? types[^1] : new TypeReference("void");
+        var isInline = tokens.Current.Kind is not (TokenKind.NewLine or TokenKind.OpenBrace);
+        List<SyntaxElement> elements;
+        if (isInline)
+        {
+            var value = ParseExpression();
+            elements = new List<SyntaxElement>
+            {
+                returnType.Kind == TypeKind.Void ? new ExpressionStatement(value) : new ReturnStatement(value)
+            };
+        }
+        else
+        {
+            tokens.TryConsume(TokenKind.NewLine);
+            tokens.Expect(TokenKind.OpenBrace);
+            EndOfLine();
+            elements = ParseBody();
+            tokens.Expect(TokenKind.CloseBrace);
+        }
+        tokens.Expect(TokenKind.CloseParenthesis);
+        return new LambdaExpression(new ParameterList(parameters, closingOnNewLine), returnType, elements, isInline);
     }
 
     // Converts C# cast syntax into the same node as GDScript's float(value) conversion.

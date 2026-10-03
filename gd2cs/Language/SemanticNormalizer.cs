@@ -264,6 +264,18 @@ internal sealed class SemanticNormalizer
     {
         var normalized = expression switch
         {
+            // A lambda adds a lexical scope; captured names resolve through its enclosing frames.
+            // GDScript snapshots captured locals, while C# closures share them. Reassignment of
+            // captured locals is outside this translation subset; shared object mutation is valid.
+            LambdaExpression lambda => lambda with
+            {
+                Elements = NormalizeCallable(lambda.Parameters, lambda.Elements, scope)
+            },
+            CallableInvocationExpression callable => callable with
+            {
+                Target = NormalizeExpression(callable.Target, scope),
+                Arguments = NormalizeArguments(callable.Arguments, scope)
+            },
             ObjectCreationExpression creation => creation with
             {
                 Arguments = NormalizeArguments(creation.Arguments, scope),
@@ -360,6 +372,9 @@ internal sealed class SemanticNormalizer
         var receiverType = ResolveType(member.Target, scope);
         if (receiverType is null)
             return invocation with { Target = target, Arguments = arguments };
+        if (receiverType.Kind == TypeKind.Callable &&
+            member.Member == (language == ScriptLanguage.CSharp ? "Call" : "call"))
+            return new CallableInvocationExpression(member.Target, arguments);
         if (CollectionMappings.TryInvocation(
                 language,
                 receiverType.Kind,
@@ -468,6 +483,8 @@ internal sealed class SemanticNormalizer
     // Infers only types needed for safe downstream collection binding.
     private static TypeReference? ResolveType(Expression? expression, BindingScope scope) => expression switch
     {
+        LambdaExpression => new TypeReference("Callable"),
+        CallableInvocationExpression => new TypeReference("Variant"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,

@@ -96,6 +96,18 @@ public sealed record ValueExpression(string Text) : Expression;
 // Refers to the current class instance independently of C# this and GDScript self.
 public sealed record CurrentInstanceExpression : Expression;
 
+// Stores a local Callable lambda using the same parameters and ordered body as named methods.
+public sealed record LambdaExpression(
+    ParameterList Parameters,
+    TypeReference ReturnType,
+    List<SyntaxElement> Elements,
+    bool IsInline) : Expression;
+
+// Invokes a Callable independently of C# Call and GDScript call spellings.
+public sealed record CallableInvocationExpression(
+    Expression Target,
+    ArgumentList Arguments) : Expression;
+
 // Represents a scalar conversion independently of each language's cast syntax.
 public sealed record ConversionExpression(
     TypeReference Type,

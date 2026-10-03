@@ -135,6 +135,14 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case LambdaExpression lambda:
+                EmitLambda(output, lambda, indent);
+                break;
+            case CallableInvocationExpression callable:
+                EmitExpression(output, callable.Target, indent);
+                output.Append(".Call");
+                EmitArguments(output, callable.Arguments, indent);
+                break;
             case CurrentInstanceExpression:
                 output.Append("this");
                 break;
@@ -226,6 +234,48 @@ public sealed class CSharpEmitter : IScriptEmitter
             default:
                 throw new NotSupportedException("Unsupported language dialect.");
         }
+    }
+
+    // Callable.From uses an Action overload for void, or a Func overload with a final result type.
+    private void EmitLambda(StringBuilder output, LambdaExpression lambda, string indent)
+    {
+        output.Append("Callable.From");
+        var types = lambda.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
+        if (lambda.ReturnType.Kind != TypeKind.Void)
+            types.Add(lambda.ReturnType);
+        if (types.Count > 0)
+        {
+            output.Append('<');
+            for (var index = 0; index < types.Count; index++)
+            {
+                if (index > 0)
+                    output.Append(", ");
+                EmitType(output, types[index]);
+            }
+            output.Append('>');
+        }
+        output.Append('(');
+        EmitParameters(output, lambda.Parameters, indent);
+        output.Append(") =>");
+        if (lambda.IsInline)
+        {
+            output.Append(' ');
+            var value = lambda.Elements.Single() switch
+            {
+                ReturnStatement statement => statement.Value!,
+                ExpressionStatement statement => statement.Expression,
+                _ => throw new NotSupportedException("Unsupported language dialect.")
+            };
+            EmitExpression(output, value, indent);
+        }
+        else
+        {
+            output.AppendLine();
+            output.AppendLine(indent + "{");
+            EmitBody(output, lambda.Elements, indent + "    ");
+            output.Append(indent + "}");
+        }
+        output.Append(')');
     }
 
     // Global math calls use their C# spelling; member and other call targets remain structural.

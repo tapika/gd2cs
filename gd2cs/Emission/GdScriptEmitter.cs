@@ -283,6 +283,14 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case LambdaExpression lambda:
+                EmitLambda(output, lambda, indent);
+                break;
+            case CallableInvocationExpression callable:
+                EmitExpression(output, callable.Target, indent);
+                output.Append(".call");
+                EmitArguments(output, callable.Arguments, indent);
+                break;
             case CurrentInstanceExpression:
                 output.Append("self");
                 break;
@@ -367,6 +375,40 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 break;
             default:
                 throw new NotSupportedException("Unsupported language dialect.");
+        }
+    }
+
+    // Reuses callable parameters and statements while preserving inline versus multiline layout.
+    private void EmitLambda(StringBuilder output, LambdaExpression lambda, string indent)
+    {
+        output.Append("func ");
+        EmitParameters(output, lambda.Parameters, indent);
+        output.Append(')');
+        if (lambda.ReturnType.Kind != TypeKind.Void)
+        {
+            output.Append(" -> ");
+            EmitType(output, lambda.ReturnType);
+        }
+        output.Append(':');
+        if (lambda.IsInline)
+        {
+            output.Append(' ');
+            if (lambda.Elements.Single() is ReturnStatement statement)
+            {
+                output.Append("return ");
+                EmitExpression(output, statement.Value!, indent);
+            }
+            else if (lambda.Elements.Single() is ExpressionStatement expression)
+                EmitExpression(output, expression.Expression, indent);
+            else
+                throw new NotSupportedException("Unsupported language dialect.");
+        }
+        else
+        {
+            output.AppendLine();
+            EmitBody(output, lambda.Elements, indent + "\t");
+            // The enclosing declaration writes the last newline after the lambda expression.
+            output.Length -= Environment.NewLine.Length;
         }
     }
 

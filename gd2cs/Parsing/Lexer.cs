@@ -67,6 +67,7 @@ internal sealed class Lexer
                 var pairKind = (character, source[position + 1]) switch
                 {
                     ('-', '>') => TokenKind.Arrow,
+                    ('=', '>') => TokenKind.LambdaArrow,
                     ('=', '=') => TokenKind.EqualEqual,
                     ('!', '=') => TokenKind.BangEqual,
                     ('<', '=') => TokenKind.LessThanOrEqual,
