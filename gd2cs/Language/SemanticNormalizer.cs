@@ -113,27 +113,26 @@ internal sealed class SemanticNormalizer
     {
         Parameters = parameters.Parameters.Select(parameter => parameter with
         {
-            DefaultValue = NormalizeParameterDefault(parameter, scope)
+            DefaultValue = NormalizeTypedValue(parameter.Type, parameter.DefaultValue, scope)
         }).ToList()
     };
 
-    // C# default and GDScript's empty built-in constructor denote the same parameter value.
+    // C# default and GDScript's empty built-in constructor denote the same typed value.
     // Callable is a value type: null is not a valid replacement for an empty Callable().
-    private Expression? NormalizeParameterDefault(ParameterDeclaration parameter, BindingScope scope)
+    private Expression? NormalizeTypedValue(TypeReference? type, Expression? value, BindingScope scope)
     {
-        var value = parameter.DefaultValue;
         if (value is null)
             return null;
-        var isEmptyValueType = parameter.Type.Kind is TypeKind.Callable or TypeKind.StringName or TypeKind.NodePath;
+        var isEmptyValueType = type?.Kind is TypeKind.Callable or TypeKind.StringName or TypeKind.NodePath;
         if (isEmptyValueType)
         {
             if (value is ValueExpression { Text: "default" })
-                return new TypeDefaultExpression(parameter.Type);
+                return new TypeDefaultExpression(type!);
             if (value is InvocationExpression invocation &&
                 invocation.Target is ValueExpression target &&
-                target.Text == parameter.Type.Name &&
+                target.Text == type!.Name &&
                 invocation.Arguments.Arguments.Count == 0)
-                return new TypeDefaultExpression(parameter.Type);
+                return new TypeDefaultExpression(type!);
         }
         return NormalizeExpression(value, scope);
     }
@@ -179,11 +178,7 @@ internal sealed class SemanticNormalizer
     // Rebuilds expressions and recursively isolates block-local declarations.
     private SyntaxElement NormalizeBodyElement(SyntaxElement element, BindingScope scope) => element switch
     {
-        AssignmentStatement statement => statement with
-        {
-            Target = NormalizeExpression(statement.Target, scope),
-            Value = NormalizeExpression(statement.Value, scope)
-        },
+        AssignmentStatement statement => NormalizeAssignment(statement, scope),
         ReturnStatement statement => statement with
         {
             Value = statement.Value is null ? null : NormalizeExpression(statement.Value, scope)
@@ -203,12 +198,21 @@ internal sealed class SemanticNormalizer
         _ => element
     };
 
+    // The assignment target supplies the type needed to interpret an empty value safely.
+    private AssignmentStatement NormalizeAssignment(AssignmentStatement statement, BindingScope scope)
+    {
+        var target = NormalizeExpression(statement.Target, scope);
+        var value = NormalizeTypedValue(ResolveType(target, scope), statement.Value, scope)!;
+        return statement with { Target = target, Value = value };
+    }
+
     // Retains static typing when GDScript cannot infer it from the emitted expression.
     private LocalVariableStatement NormalizeLocal(LocalVariableStatement statement, BindingScope scope)
     {
-        var initializer = statement.Initializer is null
-            ? null
-            : NormalizeExpression(statement.Initializer, scope);
+        var initializer = NormalizeTypedValue(statement.Type, statement.Initializer, scope);
+        // Typed GDScript locals start empty; CSharpParser already folds their emitted default initializer.
+        if (initializer is TypeDefaultExpression && statement.Typing == LocalTyping.Explicit)
+            initializer = null;
         var type = statement.Type ?? ResolveType(initializer, scope);
         var typing = statement.Typing;
         if (typing == LocalTyping.Inferred && !CanGdScriptInfer(initializer))
@@ -516,6 +520,7 @@ internal sealed class SemanticNormalizer
     // Infers only types needed for safe downstream collection binding.
     private static TypeReference? ResolveType(Expression? expression, BindingScope scope) => expression switch
     {
+        TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
         CurrentInstanceExpression => scope.CurrentInstanceType,

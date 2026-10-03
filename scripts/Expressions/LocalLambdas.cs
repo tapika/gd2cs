@@ -6,6 +6,18 @@ public partial class LocalLambdas : RefCounted
 {
 	public int Value = 0;
 
+	public void replace()
+	{
+		Callable callback = default;
+		callback = default;
+		callback = Callable.From<int>((int value) =>
+		{
+			this.Value = value;
+		});
+		callback.Call(3);
+		callback = default;
+	}
+
 	public Variant evaluate(int offset)
 	{
 		Callable sum = Callable.From<int, int, int>((int left, int right) =>

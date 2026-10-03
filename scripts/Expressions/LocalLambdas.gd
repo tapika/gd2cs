@@ -3,6 +3,14 @@ extends RefCounted
 
 var Value := 0
 
+func replace():
+	var callback : Callable
+	callback = Callable()
+	callback = func (value: int):
+		self.Value = value
+	callback.call(3)
+	callback = Callable()
+
 func evaluate(offset: int) -> Variant:
 	var sum : Callable = func (left: int, right: int) -> int:
 		# Read an enclosing parameter without changing it.

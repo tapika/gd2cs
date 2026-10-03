@@ -177,7 +177,7 @@ public sealed class GdScriptParser : IScriptParser
             var expression = ParseExpression();
             if (tokens.TryConsume(TokenKind.Equals))
             {
-                var value = ParseExpression();
+                var value = tokens.Current.Text == "func" ? ParseLambda(statementColumn) : ParseExpression();
                 elements.Add(new AssignmentStatement(expression, value));
                 EndOfLine(optional: true);
                 continue;
