@@ -53,3 +53,26 @@ var value = new Example
 ```
 
 GDScript has no equivalent object-initializer syntax, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
+
+## Nullable types
+
+C# can normally assign `null` to `string`. For gd script this is not possible.
+If you pass in function - recommended to use empty string instead.
+
+```csharp
+void func(string s = "")
+```
+
+This will get translated correctly to gd script.
+
+Generally C# also supports nullable types, e.g. 
+
+```csharp
+void func(string? s = null)
+```
+
+Gd script does not supports that one, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
+
+
+
+
