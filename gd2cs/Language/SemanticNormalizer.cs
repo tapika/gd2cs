@@ -168,8 +168,7 @@ internal sealed class SemanticNormalizer
             {
                 // Inferred locals become bindable from the normalized initializer type.
                 var type = local.Type ?? ResolveType(local.Initializer, scope);
-                if (type is not null)
-                    scope.Declare(local.Name, type);
+                scope.Declare(local.Name, type ?? new TypeReference(""));
             }
         }
         return result;
@@ -370,6 +369,7 @@ internal sealed class SemanticNormalizer
             {
                 Expression = NormalizeExpression(parenthesized.Expression, scope)
             },
+            ValueExpression value when TryNormalizeEnum(value, scope, out var constant) => constant,
             MemberAccessExpression member => NormalizeMemberAccess(member, scope),
             GodotMemberAccessExpression member => member with
             {
@@ -472,6 +472,8 @@ internal sealed class SemanticNormalizer
     */
     private Expression NormalizeMemberAccess(MemberAccessExpression member, BindingScope scope)
     {
+        if (TryNormalizeEnum(member, scope, out var constant))
+            return constant;
         var target = NormalizeExpression(member.Target, scope);
         var receiverType = ResolveType(target, scope);
         if (language == ScriptLanguage.CSharp &&
@@ -490,6 +492,31 @@ internal sealed class SemanticNormalizer
             return new GodotMemberAccessExpression(target, reference);
         }
         return member with { Target = target };
+    }
+
+    private bool TryNormalizeEnum(Expression expression, BindingScope scope, out Expression constant)
+    {
+        var parts = new List<string>();
+        while (expression is MemberAccessExpression member)
+        {
+            parts.Insert(0, member.Member);
+            expression = member.Target;
+        }
+        if (expression is ValueExpression root && scope.Resolve(root.Text) is null &&
+            !scope.IsUserMethod(root.Text))
+        {
+            parts.Insert(0, root.Text);
+            var name = string.Join('.', parts);
+            if (godotTypes.TryResolveEnum(name, language, out var reference) ||
+                language == ScriptLanguage.GdScript && parts.Count == 1 &&
+                godotTypes.TryResolveEnum(scope.CurrentInstanceType.Name + "." + name, language, out reference))
+            {
+                constant = new GodotEnumExpression(reference);
+                return true;
+            }
+        }
+        constant = null!;
+        return false;
     }
 
     // Folds C#'s property comparison into the same boolean operation as GDScript is_empty().
@@ -551,6 +578,7 @@ internal sealed class SemanticNormalizer
                 : new List<TypeReference> { elementType }),
         IndexExpression index => ResolveType(index.Target, scope)?.TypeArguments.FirstOrDefault(),
         GodotMemberAccessExpression member => member.Member.ResultType,
+        GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
         CollectionOperationExpression { Operation: CollectionOperation.Count } => new TypeReference("int"),
         CollectionOperationExpression { Operation: CollectionOperation.IsEmpty or CollectionOperation.ContainsValue or CollectionOperation.ContainsKey } => new TypeReference("bool"),
         ParenthesizedExpression parenthesized => ResolveType(parenthesized.Expression, scope),

@@ -242,6 +242,12 @@ public sealed record MemberAccessExpression(
     Expression Target,
     string Member) : Expression;
 
+// Identifies a Godot enum member by its reflected C# type and member, not its GDScript spelling.
+public sealed record GodotEnumReference(string EnumType, string Member);
+
+// Stores a resolved enum constant so emitters can choose the cataloged spelling for either language.
+public sealed record GodotEnumExpression(GodotEnumReference Constant) : Expression;
+
 // Identifies one reflected Godot member without storing either language's spelling.
 public sealed record GodotMemberReference(
     string DeclaringType,

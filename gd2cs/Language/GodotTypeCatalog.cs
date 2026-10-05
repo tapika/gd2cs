@@ -72,6 +72,7 @@ public sealed class GodotTypeCatalog
         TypeReference ResultType);
 
     private readonly List<Constructor> constructors;
+    private GodotEnumCatalog enums = GodotEnumCatalog.CreateKnownBuiltIns();
     // Finds a property or field by concrete receiver type and GDScript name.
     private readonly Dictionary<string, Member> gdScriptMembers;
     // Finds a property or field by concrete receiver type and C# name.
@@ -182,8 +183,17 @@ public sealed class GodotTypeCatalog
         var assemblyPath = FindGodotSharp(projectPath, executablePath);
         if (assemblyPath is null)
             throw new FileNotFoundException("GodotSharp.dll was not found beside Godot or inside the project.");
-        return FromAssembly(Assembly.LoadFrom(assemblyPath));
+        var assembly = Assembly.LoadFrom(assemblyPath);
+        var catalog = FromAssembly(assembly);
+        catalog.enums = GodotEnumCatalog.Load(assembly, executablePath);
+        return catalog;
     }
+
+    public bool TryResolveEnum(string name, ScriptLanguage language, out GodotEnumReference reference) =>
+        enums.TryResolve(name, language, out reference);
+
+    public string EnumName(GodotEnumReference reference, ScriptLanguage language) =>
+        enums.Name(reference, language);
 
     public bool IsBuiltInValueConstructor(string typeName, int argumentCount)
     {

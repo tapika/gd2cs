@@ -233,6 +233,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, parenthesized.Expression, indent);
                 output.Append(')');
                 break;
+            case GodotEnumExpression constant:
+                output.Append(godotTypes.EnumName(constant.Constant, ScriptLanguage.CSharp));
+                break;
             case MemberAccessExpression member:
                 EmitExpression(output, member.Target, indent);
                 output.Append('.');

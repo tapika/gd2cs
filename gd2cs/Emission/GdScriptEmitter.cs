@@ -375,6 +375,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitExpression(output, parenthesized.Expression, indent);
                 output.Append(')');
                 break;
+            case GodotEnumExpression constant:
+                output.Append(godotTypes.EnumName(constant.Constant, ScriptLanguage.GdScript));
+                break;
             case MemberAccessExpression member:
                 EmitExpression(output, member.Target, indent);
                 output.Append('.');
