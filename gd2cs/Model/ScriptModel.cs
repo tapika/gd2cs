@@ -167,11 +167,12 @@ public sealed record GodotMethodReference(
     string Name,
     TypeReference ResultType);
 
-// Invokes a type-bound Godot method while retaining its receiver expression.
+// Invokes a type-bound Godot method, retaining whether its receiver was implicit or explicitly qualified.
 public sealed record GodotMethodInvocationExpression(
     Expression Target,
     GodotMethodReference Method,
-    ArgumentList Arguments) : Expression;
+    ArgumentList Arguments,
+    bool IsImplicitReceiver = false) : Expression;
 
 // Represents collection behavior independently of method and property spellings.
 public sealed record CollectionOperationExpression(

@@ -187,8 +187,11 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitArguments(output, global.Arguments, indent);
                 break;
             case GodotMethodInvocationExpression method:
-                EmitExpression(output, method.Target, indent);
-                output.Append('.');
+                if (!method.IsImplicitReceiver)
+                {
+                    EmitExpression(output, method.Target, indent);
+                    output.Append('.');
+                }
                 output.Append(godotTypes.MethodName(method.Method, ScriptLanguage.CSharp));
                 EmitArguments(output, method.Arguments, indent);
                 break;

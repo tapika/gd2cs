@@ -170,7 +170,9 @@ public sealed class GodotTypeCatalog
             KnownGlobalFunction("GD", "Load", "load", 1, 1, "Resource")
         ],
         [
-            KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void")
+            KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void"),
+            KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
+            KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string")
         ]);
 
     // Loads constructor metadata from the Godot installation selected for this project.

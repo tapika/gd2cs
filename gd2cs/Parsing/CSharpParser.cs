@@ -662,6 +662,7 @@ public sealed class CSharpParser : IScriptParser
     private static string ExpressionName(Expression expression) => expression switch
     {
         ValueExpression value => value.Text,
+        CurrentInstanceExpression => "this",
         MemberAccessExpression member => ExpressionName(member.Target) + "." + member.Member,
         _ => throw new NotSupportedException("Unsupported language dialect.")
     };

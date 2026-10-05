@@ -92,7 +92,7 @@ internal sealed class SemanticNormalizer
         MethodDeclaration method => method with
         {
             Parameters = NormalizeParameters(method.Parameters, scope),
-            Elements = NormalizeCallable(method.Parameters, method.Elements, scope)
+            Elements = NormalizeCallable(method.Parameters, method.Elements, scope, method.IsStatic)
         },
         DestructorDeclaration destructor => destructor with
         {
@@ -141,8 +141,11 @@ internal sealed class SemanticNormalizer
     private List<SyntaxElement> NormalizeCallable(
         ParameterList parameters,
         List<SyntaxElement> elements,
-        BindingScope scope)
+        BindingScope scope,
+        bool isStatic = false)
     {
+        var hadCurrentInstance = scope.HasCurrentInstance;
+        scope.HasCurrentInstance = !isStatic;
         scope.Push();
         try
         {
@@ -153,6 +156,7 @@ internal sealed class SemanticNormalizer
         finally
         {
             scope.Pop();
+            scope.HasCurrentInstance = hadCurrentInstance;
         }
     }
 
@@ -387,7 +391,7 @@ internal sealed class SemanticNormalizer
             : normalized;
     }
 
-    // Converts a method spelling only after its receiver resolves to a supported collection.
+    // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
         var target = NormalizeExpression(invocation.Target, scope);
@@ -411,7 +415,24 @@ internal sealed class SemanticNormalizer
         {
             return new GodotGlobalFunctionExpression(function, arguments);
         }
+        if (target is ValueExpression implicitMethod &&
+            scope.HasCurrentInstance &&
+            !scope.IsUserMethod(implicitMethod.Text) &&
+            scope.Resolve(implicitMethod.Text) is null &&
+            godotTypes.TryResolveMethod(
+                scope.CurrentInstanceType.Name,
+                implicitMethod.Text,
+                language,
+                arguments.Arguments.Count,
+                out var inheritedMethod))
+        {
+            return new GodotMethodInvocationExpression(
+                new CurrentInstanceExpression(), inheritedMethod, arguments, IsImplicitReceiver: true);
+        }
         if (target is not MemberAccessExpression member)
+            return invocation with { Target = target, Arguments = arguments };
+
+        if (member.Target is CurrentInstanceExpression && scope.IsUserMethod(member.Member))
             return invocation with { Target = target, Arguments = arguments };
 
         var receiverType = ResolveType(member.Target, scope);
@@ -603,6 +624,9 @@ internal sealed class SemanticNormalizer
         }
 
         public TypeReference CurrentInstanceType { get; }
+
+        // Instance methods are unavailable in static bodies and outside callable bodies.
+        public bool HasCurrentInstance { get; set; }
 
         public bool IsUserMethod(string name) => methods.Contains(name);
 
