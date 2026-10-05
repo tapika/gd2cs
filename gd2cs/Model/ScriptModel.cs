@@ -174,6 +174,22 @@ public sealed record GodotMethodInvocationExpression(
     ArgumentList Arguments,
     bool IsImplicitReceiver = false) : Expression;
 
+// Stores a type-bound string operation without either language's method spelling or comparison arguments.
+public sealed record StringOperationExpression(
+    Expression Target,
+    StringOperation Operation,
+    ArgumentList Arguments) : Expression;
+
+// Distinguishes culture-independent casing and matching semantics shared by both languages.
+public enum StringOperation
+{
+    Uppercase,
+    Lowercase,
+    Contains,
+    StartsWith,
+    EndsWith
+}
+
 // Represents collection behavior independently of method and property spellings.
 public sealed record CollectionOperationExpression(
     Expression Target,

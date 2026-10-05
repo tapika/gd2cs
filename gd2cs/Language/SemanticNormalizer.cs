@@ -446,6 +446,11 @@ internal sealed class SemanticNormalizer
             member.Member == "is_null" &&
             arguments.Arguments.Count == 0)
             return new CallableNullExpression(member.Target);
+        if (receiverType.Kind == TypeKind.String &&
+            StringMappings.TryInvocation(language, member.Member, arguments, out var stringOperation, out var stringArguments))
+        {
+            return new StringOperationExpression(member.Target, stringOperation, stringArguments);
+        }
         if (CollectionMappings.TryInvocation(
                 language,
                 receiverType.Kind,
@@ -586,12 +591,14 @@ internal sealed class SemanticNormalizer
         CallableInvocationExpression => new TypeReference("Variant"),
         CallableNullExpression => new TypeReference("bool"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
+        ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,
         SafeCastExpression cast => cast.Type,
         ObjectCreationExpression creation => creation.Type,
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
+        StringOperationExpression operation => StringMappings.ResultType(operation.Operation),
         ArrayExpression array => new TypeReference(
             "Array",
             array.Elements.Count == 0 || ResolveType(array.Elements[0].Value, scope) is not { } elementType

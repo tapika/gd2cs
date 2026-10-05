@@ -653,6 +653,8 @@ public sealed class CSharpParser : IScriptParser
     // Math functions use one canonical GDScript name while all other callable targets stay structural.
     private static Expression NormalizeCallableTarget(Expression expression, ArgumentList arguments)
     {
+        if (expression is not (ValueExpression or MemberAccessExpression { Target: ValueExpression }))
+            return expression;
         var name = ExpressionName(expression);
         var normalized = MathFunctionNames.ToGdScript(name, arguments.Arguments);
         return normalized == name ? expression : new ValueExpression(normalized);

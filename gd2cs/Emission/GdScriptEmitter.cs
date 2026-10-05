@@ -347,6 +347,12 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(godotTypes.MethodName(method.Method, ScriptLanguage.GdScript));
                 EmitArguments(output, method.Arguments, indent);
                 break;
+            case StringOperationExpression operation:
+                EmitExpression(output, operation.Target, indent);
+                output.Append('.');
+                output.Append(StringMappings.Member(operation.Operation, ScriptLanguage.GdScript));
+                EmitArguments(output, operation.Arguments, indent);
+                break;
             case CollectionOperationExpression collection:
                 EmitCollectionOperation(output, collection, indent);
                 break;

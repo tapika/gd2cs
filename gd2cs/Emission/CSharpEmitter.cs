@@ -195,6 +195,12 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append(godotTypes.MethodName(method.Method, ScriptLanguage.CSharp));
                 EmitArguments(output, method.Arguments, indent);
                 break;
+            case StringOperationExpression operation:
+                EmitExpression(output, operation.Target, indent);
+                output.Append('.');
+                output.Append(StringMappings.Member(operation.Operation, ScriptLanguage.CSharp));
+                EmitArguments(output, StringMappings.CSharpArguments(operation.Operation, operation.Arguments), indent);
+                break;
             case CollectionOperationExpression collection:
                 EmitCollectionOperation(output, collection, indent);
                 break;
