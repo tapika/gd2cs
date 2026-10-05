@@ -330,6 +330,10 @@ internal sealed class SemanticNormalizer
             {
                 Value = NormalizeExpression(conversion.Value, scope)
             },
+            SafeCastExpression cast => cast with
+            {
+                Value = NormalizeExpression(cast.Value, scope)
+            },
             ArrayExpression array => array with
             {
                 Elements = array.Elements
@@ -536,6 +540,7 @@ internal sealed class SemanticNormalizer
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,
+        SafeCastExpression cast => cast.Type,
         ObjectCreationExpression creation => creation.Type,
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,

@@ -119,6 +119,9 @@ public sealed record ConversionExpression(
     TypeReference Type,
     Expression Value) : Expression;
 
+// Object casts keep the same instance on success and return null on incompatible types.
+public sealed record SafeCastExpression(TypeReference Type, Expression Value) : Expression;
+
 // Represents construction while retaining whether Godot treats the type as a built-in value.
 public sealed record ObjectCreationExpression(
     TypeReference Type,

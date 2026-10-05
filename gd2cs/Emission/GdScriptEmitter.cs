@@ -288,6 +288,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case SafeCastExpression cast:
+                EmitExpression(output, cast.Value, indent);
+                output.Append(" as ");
+                EmitType(output, cast.Type);
+                break;
             case TypeDefaultExpression defaultValue:
                 EmitType(output, defaultValue.Type);
                 output.Append("()");

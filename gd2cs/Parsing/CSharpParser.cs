@@ -414,6 +414,12 @@ public sealed class CSharpParser : IScriptParser
         var left = ParseUnaryExpression();
         while (true)
         {
+            // C# places as casts at the same precedence as relational operators.
+            if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "as"))
+            {
+                left = new SafeCastExpression(ParseType(), left);
+                continue;
+            }
             if (minimumPrecedence <= 2 && tokens.TryConsume(TokenKind.Identifier, "is"))
             {
                 var isNotNull = tokens.TryConsume(TokenKind.Identifier, "not");

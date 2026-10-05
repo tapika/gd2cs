@@ -359,8 +359,16 @@ public sealed class GdScriptParser : IScriptParser
     private Expression ParseExpression(int minimumPrecedence = 0)
     {
         var left = ParseUnaryExpression();
-        while (OperatorPrecedence(tokens.Current) >= minimumPrecedence)
+        while (true)
         {
+            // GDScript as casts bind below binary operators.
+            if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Identifier, "as"))
+            {
+                left = new SafeCastExpression(ParseType(), left);
+                continue;
+            }
+            if (OperatorPrecedence(tokens.Current) < minimumPrecedence)
+                break;
             var operatorToken = tokens.Current;
             var precedence = OperatorPrecedence(operatorToken);
             tokens.Expect(operatorToken.Kind, operatorToken.Text);

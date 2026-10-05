@@ -165,7 +165,8 @@ public sealed class GodotTypeCatalog
         ],
         [
             KnownGlobalFunction("GD", "Range", "range", 1, 1, "Array", "int"),
-            KnownGlobalFunction("GD", "Range", "range", 2, 3, "Array", "int")
+            KnownGlobalFunction("GD", "Range", "range", 2, 3, "Array", "int"),
+            KnownGlobalFunction("GD", "Load", "load", 1, 1, "Resource")
         ],
         [
             KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void")
@@ -472,7 +473,7 @@ public sealed class GodotTypeCatalog
         int requiredArgumentCount,
         int maximumArgumentCount,
         string resultType,
-        string elementType) => new(
+        string? elementType = null) => new(
             declaringType,
             cSharpName,
             gdScriptName,
@@ -480,7 +481,9 @@ public sealed class GodotTypeCatalog
             requiredArgumentCount,
             maximumArgumentCount,
             false,
-            new TypeReference(resultType, new List<TypeReference> { new(elementType) }));
+            new TypeReference(resultType, elementType is null
+                ? new List<TypeReference>()
+                : new List<TypeReference> { new(elementType) }));
 
     private static InstanceMethod KnownMethod(
         string receiverType,

@@ -14,3 +14,13 @@ func withHeight(node: Node3D, height: float) -> Vector3:
 
 func attach(parent: Node3D, child: Node3D):
 	parent.add_child(child)
+
+func loadTexture() -> Texture2D:
+	var texture := load("res://icons/sample.svg") as Texture2D
+	return texture
+
+func castPosition(node: Node) -> Vector3:
+	return (node as Node3D).position
+
+func incompatibleCast() -> bool:
+	return (RefCounted.new() as Node3D) == null

@@ -23,4 +23,20 @@ public partial class BuiltInValues : RefCounted
 	{
 		parent.AddChild(child);
 	}
+
+	public Texture2D loadTexture()
+	{
+		var texture = GD.Load("res://icons/sample.svg") as Texture2D;
+		return texture;
+	}
+
+	public Vector3 castPosition(Node node)
+	{
+		return (node as Node3D).Position;
+	}
+
+	public bool incompatibleCast()
+	{
+		return (new RefCounted() as Node3D) == null;
+	}
 }
