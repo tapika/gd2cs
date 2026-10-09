@@ -16,9 +16,9 @@ public static class CliApplication
             Description = "Path to the Godot project.",
             Required = true
         };
-        var scriptOption = new Option<string>("--script")
+        var scriptOption = new Option<string>("--scripts", "--script")
         {
-            Description = "Script path or script name.",
+            Description = "Comma-separated script paths or names.",
             Required = true
         };
         var targetOption = new Option<string?>("--to")
@@ -39,11 +39,11 @@ public static class CliApplication
         };
         var scriptOnlyOption = new Option<bool>("--scriptonly")
         {
-            Description = "Transpile the script without modifying the Godot project."
+            Description = "Transpile the scripts without modifying the Godot project."
         };
         var postBuildOption = new Option<bool>("--postbuild")
         {
-            Description = "Backtranslate the C# script to GDScript after each C# build."
+            Description = "Backtranslate the C# scripts to GDScript after each C# build."
         };
 
         var command = new RootCommand("Translate Godot scripts between GDScript and C#.");
@@ -107,7 +107,12 @@ public static class CliApplication
         GodotTypeCatalog? godotTypes)
     {
         var project = parseResult.GetValue(projectOption)!;
-        var script = parseResult.GetValue(scriptOption)!;
+        var scripts = parseResult.GetValue(scriptOption)!
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (scripts.Count == 0)
+            throw new ArgumentException("--scripts must contain at least one script path or name.");
         var target = parseResult.GetValue(targetOption);
         var godot = parseResult.GetValue(godotOption);
         var scriptOnly = parseResult.GetValue(scriptOnlyOption);
@@ -121,16 +126,8 @@ public static class CliApplication
         if (parseResult.GetValue(resetOption) && !scriptOnly)
             ResetProject(project.FullName);
 
-        var resourceRelativeScript = script.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
-            ? script[6..]
-            : script;
-        var relativeScript = resourceRelativeScript.Replace('/', Path.DirectorySeparatorChar);
-        var scriptWithoutExtension = Path.ChangeExtension(relativeScript, null);
-        var scriptDirectory = relativeScript.Contains(Path.DirectorySeparatorChar)
-            ? project.FullName
-            : Path.Combine(project.FullName, "scripts");
-        var basePath = Path.Combine(scriptDirectory, scriptWithoutExtension);
         var projectIntegration = new GodotProjectIntegration(project.FullName);
+        // Detect the direction once, before integration changes the project's active language.
         var targets = ParseTargets(target, projectIntegration.IsCSharpProject());
         var transpiler = new Transpiler(
             godotTypes ?? GodotTypeCatalog.Load(project.FullName, godot?.FullName));
@@ -139,44 +136,54 @@ public static class CliApplication
         {
             var sourceExtension = outputLanguage == "cs" ? ".gd" : ".cs";
             var targetExtension = outputLanguage == "cs" ? ".cs" : ".gd";
-            var paths = ResolvePaths(project.FullName, basePath, scriptWithoutExtension, sourceExtension, targetExtension);
-            var sourcePath = paths.Source;
-            var targetPath = paths.Target;
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            transpiler.TranspileFile(sourcePath, targetPath);
+            foreach (var script in scripts)
+            {
+                var resourceRelativeScript = script.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
+                    ? script[6..]
+                    : script;
+                var relativeScript = resourceRelativeScript.Replace('/', Path.DirectorySeparatorChar);
+                var scriptWithoutExtension = Path.ChangeExtension(relativeScript, null);
+                var scriptDirectory = relativeScript.Contains(Path.DirectorySeparatorChar)
+                    ? project.FullName
+                    : Path.Combine(project.FullName, "scripts");
+                var basePath = Path.Combine(scriptDirectory, scriptWithoutExtension);
+                var paths = ResolvePaths(project.FullName, basePath, scriptWithoutExtension, sourceExtension, targetExtension);
+                var sourcePath = paths.Source;
+                var targetPath = paths.Target;
+                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                transpiler.TranspileFile(sourcePath, targetPath);
+
+                if (scriptOnly)
+                {
+                    Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
+                    continue;
+                }
+
+                var sourceResourcePath = projectIntegration.ToResourcePath(sourcePath);
+                var targetResourcePath = projectIntegration.ToResourcePath(targetPath);
+                var changedReferences = projectIntegration.RewriteReferences(
+                    sourceResourcePath,
+                    targetResourcePath);
+                projectIntegration.RewriteScriptReferences(sourceResourcePath, targetResourcePath);
+                if (paths.IsPaired)
+                    ActivateFolder(Path.GetDirectoryName(sourcePath)!, Path.GetDirectoryName(targetPath)!);
+                else if (outputLanguage == "cs")
+                    BackupSource(sourcePath);
+                Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
+                if (parseResult.GetValue(verboseOption))
+                    Console.WriteLine($"Updated {changedReferences.Count} project resource file(s).");
+            }
 
             if (scriptOnly)
-            {
-                Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
                 continue;
-            }
-
-            var sourceResourcePath = projectIntegration.ToResourcePath(sourcePath);
-            var targetResourcePath = projectIntegration.ToResourcePath(targetPath);
+            projectIntegration.ReplaceCSharpFeature(enabled: outputLanguage == "cs");
             if (outputLanguage == "cs")
-            {
-                projectIntegration.ReplaceCSharpFeature(enabled: true);
                 projectIntegration.EnsureCSharpProject(
                     projectIntegration.ReadAssemblyName(),
-                    postBuild ? script : null,
+                    postBuild ? string.Join(',', scripts) : null,
                     postBuild ? CurrentCommand() : null);
-            }
             else
-            {
-                projectIntegration.ReplaceCSharpFeature(enabled: false);
                 projectIntegration.ClearGodotCSharpCaches();
-            }
-            var changedReferences = projectIntegration.RewriteReferences(
-                sourceResourcePath,
-                targetResourcePath);
-            projectIntegration.RewriteScriptReferences(sourceResourcePath, targetResourcePath);
-            if (paths.IsPaired)
-                ActivateFolder(Path.GetDirectoryName(sourcePath)!, Path.GetDirectoryName(targetPath)!);
-            else if (outputLanguage == "cs")
-                BackupSource(sourcePath);
-            Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
-            if (parseResult.GetValue(verboseOption))
-                Console.WriteLine($"Updated {changedReferences.Count} project resource file(s).");
         }
 
         return 0;

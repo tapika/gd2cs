@@ -33,7 +33,7 @@ public sealed class GodotProjectIntegration
     }
 
     // Creates the minimal Godot C# project and XML solution when either is absent.
-    public void EnsureCSharpProject(string assemblyName, string? postBuildScript = null, string? postBuildCommand = null)
+    public void EnsureCSharpProject(string assemblyName, string? postBuildScripts = null, string? postBuildCommand = null)
     {
         EnsureDotnetConfiguration(assemblyName);
 
@@ -46,8 +46,8 @@ public sealed class GodotProjectIntegration
             WriteXml(projectFile, CreateCSharpProject());
         }
 
-        if (postBuildScript is not null && postBuildCommand is not null)
-            EnsurePostBuild(projectFile, postBuildScript, postBuildCommand);
+        if (postBuildScripts is not null && postBuildCommand is not null)
+            EnsurePostBuild(projectFile, postBuildScripts, postBuildCommand);
 
         if (!Directory.EnumerateFiles(projectPath, "*.slnx", SearchOption.TopDirectoryOnly).Any())
         {
@@ -56,12 +56,14 @@ public sealed class GodotProjectIntegration
         }
     }
 
-    private static void EnsurePostBuild(string projectFile, string script, string command)
+    private static void EnsurePostBuild(string projectFile, string scripts, string command)
     {
         var document = XDocument.Load(projectFile, LoadOptions.PreserveWhitespace);
         var project = document.Root ?? throw new InvalidOperationException("C# project has no root element.");
-        var targetName = "Gd2CsBacktranslate" + Regex.Replace(Path.GetFileNameWithoutExtension(script), "[^A-Za-z0-9_]", string.Empty);
-        project.Elements("Target").Where(element => (string?)element.Attribute("Name") == targetName).Remove();
+        const string targetName = "Gd2CsBacktranslate";
+        // Replace the old per-script targets with one invocation for the complete selection.
+        project.Elements("Target").Where(element =>
+            ((string?)element.Attribute("Name"))?.StartsWith(targetName, StringComparison.Ordinal) == true).Remove();
         project.Add(
             new XElement(
                 "Target",
@@ -72,7 +74,7 @@ public sealed class GodotProjectIntegration
                     "Exec",
                     new XAttribute(
                         "Command",
-                        command + " --project \"$(MSBuildProjectDirectory)\" --script \"" + script + "\" --scriptonly"))));
+                        command + " --project \"$(MSBuildProjectDirectory)\" --scripts \"" + scripts + "\" --to gd --scriptonly"))));
         WriteXml(projectFile, document);
     }
 

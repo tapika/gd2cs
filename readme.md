@@ -18,10 +18,12 @@ scripts/myscript-gd/            scripts/myscript-cs/
 Run the script by name:
 
 ```text
-gd2cs --project <project> --script myscript
+gd2cs --project <project> --scripts myscript
 ```
 
 The active project language selects the source folder. Output is written to the opposite folder without deleting the source. `gd2cs` adds `.gdignore` to the source folder, removes it from the target folder, and updates script references.
+
+Pass multiple names or paths separated by commas: `--scripts myscript,otherscript`. `--script` remains an alias.
 
 This is done in case if you need to transpile `.cs` back to `.gd`, for example for web export.
 
@@ -30,12 +32,12 @@ This is done in case if you need to transpile `.cs` back to `.gd`, for example f
 Add `--postbuild` when translating GDScript to C#:
 
 ```text
-gd2cs --project <project> --script myscript --postbuild
+gd2cs --project <project> --scripts myscript,otherscript --postbuild
 ```
 
-This adds an idempotent target to the generated or existing `.csproj`. After each successful C# build, the target runs gd2cs with `--scriptonly` to regenerate the GDScript file again.
+This adds an idempotent target to the generated or existing `.csproj`. After each successful C# build, the target runs gd2cs with `--scripts`, `--to gd`, and `--scriptonly` to regenerate all selected GDScript files.
 
-`--scriptonly` translates only the selected script. It does not change project settings, references, caches, `.gdignore` files, or the source script.
+`--scriptonly` translates only the selected scripts. It does not change project settings, references, caches, `.gdignore` files, or the source scripts.
 
 This way it's possible to observe that you will not break `.gd` script due to `gd2cs` non-supported C# languages features.
 
@@ -72,7 +74,6 @@ void func(string? s = null)
 ```
 
 Gd script does not supports that one, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
-
 
 
 
