@@ -41,6 +41,43 @@ This adds an idempotent target to the generated or existing `.csproj`. After eac
 
 This way it's possible to observe that you will not break `.gd` script due to `gd2cs` non-supported C# languages features.
 
+## Gd / C# interoperability gotchas
+
+### Instantiating a loaded C# script
+
+Use `=` rather than `:=` when instantiating a dynamically loaded C# script:
+
+```gdscript
+var ScriptFactory := load("res://scripts/ScriptFactory-cs/ScriptFactory.cs")
+var factory = ScriptFactory.new()
+```
+
+`:=` requires static type inference, which may fail or resolve only a base Godot type rather than the C# script's concrete type. `=` keeps the variable dynamically typed, allowing access to the instance's script members. The same declaration works when the resource path is switched to the GDScript version.
+
+### Accessing C# static data from GDScript
+
+Loading a C# script gives a `CSharpScript` resource. Direct access to its static fields or properties is unavailable, but static functions can expose the data:
+
+```gdscript
+var SharedValuesScript := load("res://scripts/SharedValues-cs/SharedValues.cs")
+
+# SharedValuesScript.Count is unavailable; use a static function.
+var count = SharedValuesScript.getCount()
+```
+
+In the C# class:
+
+```csharp
+public static int Count = 3;
+
+public static int getCount()
+{
+    return Count;
+}
+```
+
+The corresponding GDScript class uses `static var Count` and `static func getCount()`, so the function-based access works in either language.
+
 ## Unsupported language features
 
 ### C# object initializers
@@ -56,7 +93,7 @@ var value = new Example
 
 GDScript has no equivalent object-initializer syntax, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
 
-## Nullable types
+### Nullable types
 
 C# can normally assign `null` to `string`. For gd script this is not possible.
 If you pass in function - recommended to use empty string instead.
@@ -74,6 +111,4 @@ void func(string? s = null)
 ```
 
 Gd script does not supports that one, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
-
-
 
