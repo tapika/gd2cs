@@ -130,6 +130,34 @@ public sealed class TranspilerTests
         Assert.True(error.Column > 0);
     }
 
+    [Fact]
+    public void LocalErrorLocation()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"gd2cs-{Guid.NewGuid():N}.gd");
+        var targetPath = Path.ChangeExtension(sourcePath, ".cs");
+        var source = File.ReadAllText(Fixture("Statements/LocalVariables.gd"))
+            .Replace("var pending : int", "var pending", StringComparison.Ordinal);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var lineIndex = Array.FindIndex(lines, line => line.Trim() == "var pending");
+        try
+        {
+            File.WriteAllText(sourcePath, source);
+            var error = Assert.Throws<Parsing.ParseException>(() =>
+                new Transpiler().TranspileFile(sourcePath, targetPath));
+
+            Assert.Equal("Explicit local requires a type.", error.Message);
+            Assert.Equal(sourcePath, error.SourcePath);
+            Assert.Equal(lineIndex + 1, error.Line);
+            Assert.Equal(lines[lineIndex].IndexOf("var pending", StringComparison.Ordinal) + 1, error.Column);
+            Assert.Equal(lines[lineIndex], error.SourceLine);
+        }
+        finally
+        {
+            File.Delete(sourcePath);
+            File.Delete(targetPath);
+        }
+    }
+
     public static IEnumerable<object[]> ScriptPairs()
     {
         foreach (var pair in DiscoverScriptPairs())

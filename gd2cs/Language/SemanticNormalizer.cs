@@ -1,4 +1,5 @@
 using gd2cs.Model;
+using gd2cs.Parsing;
 
 namespace gd2cs.Language;
 
@@ -225,12 +226,12 @@ internal sealed class SemanticNormalizer
                  initializer is not null &&
                  !CanGdScriptInfer(initializer))
             typing = LocalTyping.InferredWithExplicitGdType;
-        return statement with
+        return SourceLocations.Copy(statement, statement with
         {
             Type = type,
             Initializer = initializer,
             Typing = typing
-        };
+        });
     }
 
     // Indexed collection access can remain Variant to Godot even when the neutral model knows T.

@@ -1,6 +1,7 @@
 using System.Text;
 using gd2cs.Language;
 using gd2cs.Model;
+using gd2cs.Parsing;
 
 namespace gd2cs.Emission;
 
@@ -239,7 +240,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     else if (statement.Typing is LocalTyping.Explicit or LocalTyping.InferredWithExplicitGdType)
                     {
                         output.Append(space_colon);
-                        EmitType(output, statement.Type ?? throw new InvalidOperationException("Explicit local requires a type."));
+                        EmitType(output, statement.Type ?? throw SourceLocations.Error(statement, "Explicit local requires a type."));
                         if (statement.Initializer is null)
                         {
                             output.AppendLine();

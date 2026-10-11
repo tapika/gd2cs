@@ -233,6 +233,7 @@ public sealed class CSharpParser : IScriptParser
             }
             if (tokens.Current.Kind == TokenKind.Identifier && tokens.Peek.Kind == TokenKind.Identifier)
             {
+                var statementToken = tokens.Current;
                 // C# var carries the same language-neutral inference state as GDScript :=.
                 var isInferred = tokens.TryConsume(TokenKind.Identifier, "var");
                 var type = isInferred ? null : ParseType();
@@ -247,11 +248,11 @@ public sealed class CSharpParser : IScriptParser
                     initializer = null;
                 tokens.Expect(TokenKind.Semicolon);
                 EndOfLine();
-                elements.Add(new LocalVariableStatement(
+                elements.Add(SourceLocations.Record(new LocalVariableStatement(
                     name,
                     type,
                     initializer,
-                    isInferred ? LocalTyping.Inferred : LocalTyping.Explicit));
+                    isInferred ? LocalTyping.Inferred : LocalTyping.Explicit), statementToken));
                 continue;
             }
             var expression = ParseExpression();

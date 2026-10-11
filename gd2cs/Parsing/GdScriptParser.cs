@@ -125,7 +125,8 @@ public sealed class GdScriptParser : IScriptParser
                 EndOfLine(optional: true);
                 continue;
             }
-            var statementColumn = tokens.Current.Column;
+            var statementToken = tokens.Current;
+            var statementColumn = statementToken.Column;
             if (tokens.Current.Text == "for")
             {
                 elements.Add(ParseForEach(statementColumn));
@@ -175,7 +176,8 @@ public sealed class GdScriptParser : IScriptParser
                 var initializer = hasInitializer
                     ? tokens.Current.Text == "func" ? ParseLambda(statementColumn) : ParseExpression()
                     : null;
-                elements.Add(new LocalVariableStatement(localName, type, initializer, typing));
+                elements.Add(SourceLocations.Record(
+                    new LocalVariableStatement(localName, type, initializer, typing), statementToken));
                 EndOfLine(optional: true);
                 continue;
             }
