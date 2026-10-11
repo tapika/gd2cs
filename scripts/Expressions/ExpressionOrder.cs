@@ -19,4 +19,24 @@ public partial class ExpressionOrder : RefCounted
 	{
 		return condition ? left : right;
 	}
+
+	public int multiline(int value)
+	{
+		var total = (
+			value * 2
+			+ value * 3
+		);
+		var partial = (value +
+			value * 2 + value
+
+			- 1);
+		var nested = (
+
+			(value
+				+ 1) * 2
+			+ value
+
+		);
+		return total + partial + nested;
+	}
 }

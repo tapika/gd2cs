@@ -220,11 +220,13 @@ public sealed record Argument(
     Expression Value,
     bool StartsOnNewLine);
 
-// Represents arithmetic while preserving operator precedence in the expression tree.
+// Keeps arithmetic precedence and continuation line breaks on either side of the operator.
 public sealed record BinaryExpression(
     Expression Left,
     string Operator,
-    Expression Right) : Expression;
+    Expression Right,
+    int LineBreaksBeforeOperator = 0,
+    int LineBreaksAfterOperator = 0) : Expression;
 
 // Represents a prefix operator using its language-neutral spelling.
 public sealed record UnaryExpression(
@@ -252,8 +254,11 @@ public sealed record InterpolationValue(
     Expression Value,
     string? Format) : InterpolationPart;
 
-// Preserves explicit grouping even when precedence would produce the same result.
-public sealed record ParenthesizedExpression(Expression Expression) : Expression;
+// Preserves explicit grouping and line breaks just inside its delimiters.
+public sealed record ParenthesizedExpression(
+    Expression Expression,
+    int OpeningLineBreaks = 0,
+    int ClosingLineBreaks = 0) : Expression;
 
 // Preserves member access structurally so it can also be used as an assignment target.
 public sealed record MemberAccessExpression(

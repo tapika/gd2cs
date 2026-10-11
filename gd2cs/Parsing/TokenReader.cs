@@ -2,32 +2,52 @@ namespace gd2cs.Parsing;
 
 internal sealed class TokenReader
 {
-    // Keeps one-token lookahead available without exposing lexer state to parsers.
+    // Buffers lookahead so inspecting continuation lines does not consume their layout.
     private readonly Lexer lexer;
-    private Token current;
-    private Token next;
+    private readonly List<Token> buffered = new();
 
     public TokenReader(Lexer lexer)
     {
         this.lexer = lexer;
-        current = lexer.Next();
-        next = lexer.Next();
+        buffered.Add(lexer.Next());
+        buffered.Add(lexer.Next());
     }
 
-    public Token Current => current;
-    public Token Peek => next;
+    public Token Current => buffered[0];
+    public Token Peek => buffered[1];
+
+    // Looks beyond blank lines to decide whether an operator continues the same expression.
+    public Token PeekAfterNewLines()
+    {
+        var index = 0;
+        while (buffered[index].Kind == TokenKind.NewLine)
+        {
+            index++;
+            if (index == buffered.Count)
+                buffered.Add(lexer.Next());
+        }
+        return buffered[index];
+    }
+
+    public int ConsumeLineBreaks()
+    {
+        var count = 0;
+        while (TryConsume(TokenKind.NewLine))
+            count++;
+        return count;
+    }
 
     // Consumes the required token or reports its precise source position.
     public Token Expect(TokenKind kind, string? text = null)
     {
-        if (current.Kind != kind || (text is not null && current.Text != text))
+        if (Current.Kind != kind || (text is not null && Current.Text != text))
         {
             var expected = text is null ? kind.ToString() : $"'{text}'";
-            var actual = current.Kind == TokenKind.EndOfFile ? "end of file" : $"'{current.Text}'";
-            throw new ParseException($"Expected {expected}, found {actual}", current.Line, current.Column);
+            var actual = Current.Kind == TokenKind.EndOfFile ? "end of file" : $"'{Current.Text}'";
+            throw new ParseException($"Expected {expected}, found {actual}", Current.Line, Current.Column);
         }
 
-        var result = current;
+        var result = Current;
         Advance();
         return result;
     }
@@ -35,7 +55,7 @@ internal sealed class TokenReader
     // Consumes optional grammar only when both requested kind and text match.
     public bool TryConsume(TokenKind kind, string? text = null)
     {
-        if (current.Kind != kind || text is not null && current.Text != text)
+        if (Current.Kind != kind || text is not null && Current.Text != text)
             return false;
         Advance();
         return true;
@@ -43,14 +63,15 @@ internal sealed class TokenReader
 
     public void Skip(TokenKind kind)
     {
-        while (current.Kind == kind)
+        while (Current.Kind == kind)
             Advance();
     }
 
-    // Rotates lookahead and requests exactly one replacement token.
+    // Retains tokens already fetched while looking across continuation lines.
     private void Advance()
     {
-        current = next;
-        next = lexer.Next();
+        buffered.RemoveAt(0);
+        if (buffered.Count < 2)
+            buffered.Add(lexer.Next());
     }
 }

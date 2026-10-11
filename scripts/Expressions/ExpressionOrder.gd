@@ -12,3 +12,21 @@ func evaluate(value: int):
 
 func select(condition: bool, left: int, right: int) -> int:
 	return left if condition else right
+
+func multiline(value: int) -> int:
+	var total := (
+		value * 2
+		+ value * 3
+	)
+	var partial := (value +
+		value * 2 + value
+
+		- 1)
+	var nested := (
+
+		(value
+			+ 1) * 2
+		+ value
+
+	)
+	return total + partial + nested

@@ -208,9 +208,15 @@ public sealed class CSharpEmitter : IScriptEmitter
                 break;
             case BinaryExpression binary:
                 EmitExpression(output, binary.Left, indent);
-                output.Append(' ');
+                if (binary.LineBreaksBeforeOperator > 0)
+                    EmitLineBreaks(output, binary.LineBreaksBeforeOperator, indent);
+                else
+                    output.Append(' ');
                 output.Append(binary.Operator switch { "and" => "&&", "or" => "||", _ => binary.Operator });
-                output.Append(' ');
+                if (binary.LineBreaksAfterOperator > 0)
+                    EmitLineBreaks(output, binary.LineBreaksAfterOperator, indent);
+                else
+                    output.Append(' ');
                 EmitExpression(output, binary.Right, indent);
                 break;
             case UnaryExpression unary:
@@ -241,7 +247,10 @@ public sealed class CSharpEmitter : IScriptEmitter
                 break;
             case ParenthesizedExpression parenthesized:
                 output.Append('(');
-                EmitExpression(output, parenthesized.Expression, indent);
+                var groupedIndent = indent + "    ";
+                EmitLineBreaks(output, parenthesized.OpeningLineBreaks, groupedIndent);
+                EmitExpression(output, parenthesized.Expression, groupedIndent);
+                EmitLineBreaks(output, parenthesized.ClosingLineBreaks, indent);
                 output.Append(')');
                 break;
             case GodotEnumExpression constant:
@@ -590,6 +599,15 @@ public sealed class CSharpEmitter : IScriptEmitter
         output.AppendLine(indent + "        foreach (var value in values) result.Add(value);");
         output.AppendLine(indent + "        return result;");
         output.AppendLine(indent + "    }");
+    }
+
+    // Indent only the resumed line, retaining intentional blank continuation lines.
+    private static void EmitLineBreaks(StringBuilder output, int count, string indent)
+    {
+        for (var index = 0; index < count; index++)
+            output.AppendLine();
+        if (count > 0)
+            output.Append(indent);
     }
 
     private static void EmitType(StringBuilder output, TypeReference type)

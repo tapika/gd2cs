@@ -7,10 +7,12 @@ namespace gd2cs.Parsing;
 public sealed class CSharpParser : IScriptParser
 {
     private TokenReader tokens = null!;
+    private int groupingDepth;
 
     public ScriptModel Parse(string source)
     {
         tokens = new TokenReader(new Lexer(source, true));
+        groupingDepth = 0;
         ParseUsing("Godot");
         ParseUsing("System");
         tokens.TryConsume(TokenKind.NewLine);
@@ -418,6 +420,10 @@ public sealed class CSharpParser : IScriptParser
         var left = ParseUnaryExpression();
         while (true)
         {
+            // Consume continuation lines only when this precedence level owns the following operator.
+            var beforeOperator = groupingDepth > 0 && tokens.Current.Kind == TokenKind.NewLine
+                && OperatorPrecedence(tokens.PeekAfterNewLines()) >= minimumPrecedence
+                    ? tokens.ConsumeLineBreaks() : 0;
             // C# places as casts at the same precedence as relational operators.
             if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "as"))
             {
@@ -440,8 +446,9 @@ public sealed class CSharpParser : IScriptParser
             var operatorToken = tokens.Current;
             var precedence = OperatorPrecedence(operatorToken);
             tokens.Expect(operatorToken.Kind, operatorToken.Text);
+            var afterOperator = groupingDepth > 0 ? tokens.ConsumeLineBreaks() : 0;
             var right = ParseExpression(precedence + 1);
-            left = new BinaryExpression(left, NormalizeOperator(operatorToken.Text), right);
+            left = new BinaryExpression(left, NormalizeOperator(operatorToken.Text), right, beforeOperator, afterOperator);
         }
         if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Question))
         {
@@ -500,9 +507,13 @@ public sealed class CSharpParser : IScriptParser
             return ParseConversion();
         if (tokens.TryConsume(TokenKind.OpenParenthesis))
         {
+            groupingDepth++;
+            var openingLineBreaks = tokens.ConsumeLineBreaks();
             var grouped = ParseExpression();
+            var closingLineBreaks = tokens.ConsumeLineBreaks();
             tokens.Expect(TokenKind.CloseParenthesis);
-            return new ParenthesizedExpression(grouped);
+            groupingDepth--;
+            return new ParenthesizedExpression(grouped, openingLineBreaks, closingLineBreaks);
         }
         if (tokens.Current.Text == "new")
         {

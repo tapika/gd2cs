@@ -6,10 +6,12 @@ namespace gd2cs.Parsing;
 public sealed class GdScriptParser : IScriptParser
 {
     private TokenReader tokens = null!;
+    private int groupingDepth;
 
     public ScriptModel Parse(string source)
     {
         tokens = new TokenReader(new Lexer(source, true));
+        groupingDepth = 0;
         var elements = new List<SyntaxElement>();
         while (ParseTrivia(elements))
         {
@@ -367,6 +369,10 @@ public sealed class GdScriptParser : IScriptParser
         var left = ParseUnaryExpression();
         while (true)
         {
+            // Leave delimiter/argument newlines for their owner and lower-precedence operators for the outer call.
+            var beforeOperator = groupingDepth > 0 && tokens.Current.Kind == TokenKind.NewLine
+                && OperatorPrecedence(tokens.PeekAfterNewLines()) >= minimumPrecedence
+                    ? tokens.ConsumeLineBreaks() : 0;
             // GDScript as casts bind below binary operators.
             if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Identifier, "as"))
             {
@@ -378,10 +384,11 @@ public sealed class GdScriptParser : IScriptParser
             var operatorToken = tokens.Current;
             var precedence = OperatorPrecedence(operatorToken);
             tokens.Expect(operatorToken.Kind, operatorToken.Text);
+            var afterOperator = groupingDepth > 0 ? tokens.ConsumeLineBreaks() : 0;
             var right = ParseExpression(precedence + 1);
             left = operatorToken.Kind == TokenKind.Percent && left is ValueExpression literal && right is ArrayExpression arguments
                 ? ParseInterpolatedString(literal.Text, arguments.Elements.Select(element => element.Value).ToList())
-                : new BinaryExpression(left, operatorToken.Text, right);
+                : new BinaryExpression(left, operatorToken.Text, right, beforeOperator, afterOperator);
         }
         if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Identifier, "if"))
         {
@@ -450,9 +457,13 @@ public sealed class GdScriptParser : IScriptParser
             return ParseArray();
         if (tokens.TryConsume(TokenKind.OpenParenthesis))
         {
+            groupingDepth++;
+            var openingLineBreaks = tokens.ConsumeLineBreaks();
             var grouped = ParseExpression();
+            var closingLineBreaks = tokens.ConsumeLineBreaks();
             tokens.Expect(TokenKind.CloseParenthesis);
-            return new ParenthesizedExpression(grouped);
+            groupingDepth--;
+            return new ParenthesizedExpression(grouped, openingLineBreaks, closingLineBreaks);
         }
         var value = tokens.Current;
         tokens.Expect(value.Kind);
