@@ -132,6 +132,8 @@ public static class CliApplication
         var transpiler = new Transpiler(
             godotTypes ?? GodotTypeCatalog.Load(project.FullName, godot?.FullName));
 
+        var conversions = new List<(string OutputLanguage, string Source, string Target, bool IsPaired)>();
+        // Finish every translation before changing references, active folders, or project settings.
         foreach (var outputLanguage in targets)
         {
             var sourceExtension = outputLanguage == "cs" ? ".gd" : ".cs";
@@ -152,13 +154,20 @@ public static class CliApplication
                 var targetPath = paths.Target;
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
                 transpiler.TranspileFile(sourcePath, targetPath);
+                conversions.Add((outputLanguage, sourcePath, targetPath, paths.IsPaired));
+                Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
+            }
+        }
 
-                if (scriptOnly)
-                {
-                    Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
-                    continue;
-                }
+        if (scriptOnly)
+            return 0;
 
+        foreach (var outputLanguage in targets)
+        {
+            foreach (var paths in conversions.Where(conversion => conversion.OutputLanguage == outputLanguage))
+            {
+                var sourcePath = paths.Source;
+                var targetPath = paths.Target;
                 var sourceResourcePath = projectIntegration.ToResourcePath(sourcePath);
                 var targetResourcePath = projectIntegration.ToResourcePath(targetPath);
                 var changedReferences = projectIntegration.RewriteReferences(
@@ -169,13 +178,10 @@ public static class CliApplication
                     ActivateFolder(Path.GetDirectoryName(sourcePath)!, Path.GetDirectoryName(targetPath)!);
                 else if (outputLanguage == "cs")
                     BackupSource(sourcePath);
-                Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
                 if (parseResult.GetValue(verboseOption))
                     Console.WriteLine($"Updated {changedReferences.Count} project resource file(s).");
             }
 
-            if (scriptOnly)
-                continue;
             projectIntegration.ReplaceCSharpFeature(enabled: outputLanguage == "cs");
             if (outputLanguage == "cs")
                 projectIntegration.EnsureCSharpProject(
