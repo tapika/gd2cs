@@ -42,7 +42,19 @@ public sealed class Transpiler
         var preamble = Encoding.UTF8.Preamble;
         var hasPreamble = bytes.AsSpan().StartsWith(preamble);
         var offset = hasPreamble ? preamble.Length : 0;
-        var source = new UTF8Encoding(false, true).GetString(bytes, offset, bytes.Length - offset);
+        string source;
+        try
+        {
+            source = new UTF8Encoding(false, true).GetString(bytes, offset, bytes.Length - offset);
+        }
+        catch (DecoderFallbackException) when (sourceLanguage == ScriptLanguage.CSharp && !hasPreamble)
+        {
+            // Editors may save C# as Western Windows ANSI (e.g. euro = 0x80).
+            // Unmarked encodings cannot be identified reliably; prefer UTF-8, then Windows-1252.
+            // GDScript output must still be UTF-8, rather than inheriting the legacy code page.
+            var encoding = CodePagesEncodingProvider.Instance.GetEncoding(1252)!;
+            source = encoding.GetString(bytes);
+        }
         try
         {
             var output = Transpile(source, sourceLanguage, targetLanguage);

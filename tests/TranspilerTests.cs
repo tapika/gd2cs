@@ -4,6 +4,13 @@ namespace gd2cs.Tests;
 
 public sealed class TranspilerTests
 {
+    public enum ScriptEncoding
+    {
+        Utf8,
+        Utf8Bom,
+        Windows1252
+    }
+
     [Fact]
     public void GdToCs()
     {
@@ -38,24 +45,36 @@ public sealed class TranspilerTests
     }
 
     [Theory]
-    [InlineData(".gd", ".cs", false)]
-    [InlineData(".gd", ".cs", true)]
-    [InlineData(".cs", ".gd", false)]
-    [InlineData(".cs", ".gd", true)]
-    public void Utf8IsPreserved(string sourceExtension, string targetExtension, bool emitUTF8Identifier)
+    [InlineData(".gd", ".cs", ScriptEncoding.Utf8)]
+    [InlineData(".gd", ".cs", ScriptEncoding.Utf8Bom)]
+    [InlineData(".cs", ".gd", ScriptEncoding.Utf8)]
+    [InlineData(".cs", ".gd", ScriptEncoding.Utf8Bom)]
+    [InlineData(".cs", ".gd", ScriptEncoding.Windows1252)]
+    public void FileEncoding(string sourceExtension, string targetExtension, ScriptEncoding encoding)
     {
         var sourcePath = Path.Combine(Path.GetTempPath(), $"gd2cs-{Guid.NewGuid():N}{sourceExtension}");
         var targetPath = Path.ChangeExtension(sourcePath, targetExtension);
         try
         {
             var source = File.ReadAllText(Fixture("Expressions/InterpolatedStrings" + sourceExtension));
-            File.WriteAllText(sourcePath, source, new UTF8Encoding(emitUTF8Identifier));
+            var inputEncoding = encoding switch
+            {
+                ScriptEncoding.Utf8 => new UTF8Encoding(false),
+                ScriptEncoding.Utf8Bom => new UTF8Encoding(true),
+                ScriptEncoding.Windows1252 => CodePagesEncodingProvider.Instance.GetEncoding(1252)!,
+                _ => throw new ArgumentOutOfRangeException(nameof(encoding))
+            };
+            File.WriteAllText(sourcePath, source, inputEncoding);
+            if (encoding == ScriptEncoding.Windows1252)
+                Assert.Contains((byte)0x80, File.ReadAllBytes(sourcePath));
 
             new Transpiler().TranspileFile(sourcePath, targetPath);
 
             var output = File.ReadAllBytes(targetPath);
-            Assert.Equal(emitUTF8Identifier, output.AsSpan().StartsWith(Encoding.UTF8.Preamble));
-            Assert.Contains("€", File.ReadAllText(targetPath, Encoding.UTF8));
+            Assert.Equal(encoding == ScriptEncoding.Utf8Bom, output.AsSpan().StartsWith(Encoding.UTF8.Preamble));
+            Assert.Contains("\u20ac", new UTF8Encoding(false, true).GetString(output));
+            Assert.Equal(File.ReadAllText(Fixture("Expressions/InterpolatedStrings" + targetExtension)),
+                File.ReadAllText(targetPath, Encoding.UTF8));
         }
         finally
         {
