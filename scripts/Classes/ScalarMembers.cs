@@ -18,4 +18,13 @@ public partial class ScalarMembers : RefCounted
     public float Ratio = 1.5f;
 
     public string Label = "sample";
+
+    // Shared by all instances.
+    public static int SharedCount = 4;
+    public static string SharedLabel;
+
+    public static void resetShared()
+    {
+        SharedCount = 0;
+    }
 }

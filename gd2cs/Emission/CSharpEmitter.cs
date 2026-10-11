@@ -118,6 +118,8 @@ public sealed class CSharpEmitter : IScriptEmitter
     private void EmitField(StringBuilder output, FieldDeclaration field, string indent)
     {
         output.Append(indent + "    public ");
+        if (field.IsStatic)
+            output.Append("static ");
         EmitType(output, field.Type);
         output.Append(' ');
         output.Append(field.Name);

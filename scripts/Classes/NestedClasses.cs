@@ -11,5 +11,6 @@ public partial class NestedClasses : RefCounted
 		public const int Limit = 7;
 		public int Count = 2;
 		public string Label = "nested";
+		public static int SharedCount = 3;
 	}
 }

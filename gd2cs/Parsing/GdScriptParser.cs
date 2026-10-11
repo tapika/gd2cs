@@ -66,7 +66,10 @@ public sealed class GdScriptParser : IScriptParser
             }
             if (kind is not ("const" or "var"))
                 throw new ParseException("Expected a class element", tokens.Current.Line, tokens.Current.Column);
-            elements.Add(ParseScalar(kind == "const"));
+            var member = ParseScalar(kind == "const");
+            elements.Add(member is FieldDeclaration field
+                ? field with { IsStatic = isStatic }
+                : member);
             EndOfLine(optional: true);
         }
         return new ClassDeclaration(name, new TypeReference(baseType), isGlobal, elements);

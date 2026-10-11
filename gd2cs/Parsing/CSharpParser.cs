@@ -106,7 +106,7 @@ public sealed class CSharpParser : IScriptParser
             }
             elements.Add(tokens.Current.Kind == TokenKind.OpenParenthesis
                 ? ParseMethod(type, memberName, isStatic, isOverride)
-                : ParseScalarAfterName(type, memberName));
+                : ParseScalarAfterName(type, memberName) with { IsStatic = isStatic });
         }
 
         tokens.Expect(TokenKind.CloseBrace);

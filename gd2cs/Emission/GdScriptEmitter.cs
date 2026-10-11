@@ -85,7 +85,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     output.AppendLine();
                     break;
                 case FieldDeclaration field:
-                    output.Append(memberIndent + "var ");
+                    output.Append(memberIndent);
+                    if (field.IsStatic)
+                        output.Append("static ");
+                    output.Append("var ");
                     output.Append(field.Name);
                     if (field.Initializer is null)
                     {

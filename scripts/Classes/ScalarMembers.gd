@@ -15,3 +15,10 @@ var TextValue : String
 var Ratio := 1.5
 
 var Label := "sample"
+
+# Shared by all instances.
+static var SharedCount := 4
+static var SharedLabel : String
+
+static func resetShared():
+    SharedCount = 0

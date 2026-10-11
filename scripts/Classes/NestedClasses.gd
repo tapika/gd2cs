@@ -7,3 +7,4 @@ class InnerType:
 	const Limit := 7
 	var Count := 2
 	var Label := "nested"
+	static var SharedCount := 3

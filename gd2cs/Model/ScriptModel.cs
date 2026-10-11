@@ -80,12 +80,13 @@ public sealed record ConstantDeclaration(
     Expression Value,
     bool IsInferred) : MemberDeclaration;
 
-// Stores a class field whose initializer may be intentionally absent.
+// Stores a field with an optional initializer; static fields are shared by every class instance.
 public sealed record FieldDeclaration(
     string Name,
     TypeReference Type,
     Expression? Initializer,
-    bool IsInferred) : MemberDeclaration;
+    bool IsInferred,
+    bool IsStatic = false) : MemberDeclaration;
 
 // Provides the language-neutral base for supported initializer expressions.
 public abstract record Expression;
