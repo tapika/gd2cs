@@ -231,7 +231,7 @@ public sealed class CSharpParser : IScriptParser
                 elements.Add(new ReturnStatement(returnValue));
                 continue;
             }
-            if (tokens.Current.Kind == TokenKind.Identifier && tokens.Peek.Kind == TokenKind.Identifier)
+            if (IsLocalDeclaration())
             {
                 var statementToken = tokens.Current;
                 // C# var carries the same language-neutral inference state as GDScript :=.
@@ -330,6 +330,46 @@ public sealed class CSharpParser : IScriptParser
         return isConstant
             ? new ConstantDeclaration(name, type, new ValueExpression(value), true)
             : new FieldDeclaration(name, type, new ValueExpression(value), true);
+    }
+
+    // A type followed by a variable name distinguishes declarations from member calls
+    // and comparison expressions. Lookahead leaves actual parsing and diagnostics intact.
+    private bool IsLocalDeclaration()
+    {
+        var offset = 0;
+        return LookAheadType(ref offset)
+            && tokens.PeekAt(offset).Kind == TokenKind.Identifier;
+    }
+
+    // Mirrors the supported type grammar, including qualified and nested generic types.
+    private bool LookAheadType(ref int offset)
+    {
+        if (tokens.PeekAt(offset).Kind != TokenKind.Identifier)
+            return false;
+        offset++;
+        while (tokens.PeekAt(offset).Kind == TokenKind.Dot)
+        {
+            offset++;
+            if (tokens.PeekAt(offset).Kind != TokenKind.Identifier)
+                return false;
+            offset++;
+        }
+        if (tokens.PeekAt(offset).Kind != TokenKind.LessThan)
+            return true;
+        offset++;
+        do
+        {
+            if (!LookAheadType(ref offset))
+                return false;
+            if (tokens.PeekAt(offset).Kind != TokenKind.Comma)
+                break;
+            offset++;
+        }
+        while (true);
+        if (tokens.PeekAt(offset).Kind != TokenKind.GreaterThan)
+            return false;
+        offset++;
+        return true;
     }
 
     private TypeReference ParseType()

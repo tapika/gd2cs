@@ -16,17 +16,21 @@ internal sealed class TokenReader
     public Token Current => buffered[0];
     public Token Peek => buffered[1];
 
+    // Fetches arbitrary lookahead without advancing the parser's current token.
+    public Token PeekAt(int offset)
+    {
+        while (buffered.Count <= offset)
+            buffered.Add(lexer.Next());
+        return buffered[offset];
+    }
+
     // Looks beyond blank lines to decide whether an operator continues the same expression.
     public Token PeekAfterNewLines()
     {
         var index = 0;
-        while (buffered[index].Kind == TokenKind.NewLine)
-        {
+        while (PeekAt(index).Kind == TokenKind.NewLine)
             index++;
-            if (index == buffered.Count)
-                buffered.Add(lexer.Next());
-        }
-        return buffered[index];
+        return PeekAt(index);
     }
 
     public int ConsumeLineBreaks()
