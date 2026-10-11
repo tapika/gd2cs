@@ -13,4 +13,11 @@ public partial class NestedClasses : RefCounted
 		public string Label = "nested";
 		public static int SharedCount = 3;
 	}
+
+	public Godot.Collections.Array<NestedClasses.InnerType> Values;
+
+	public NestedClasses.InnerType identity(NestedClasses.InnerType value)
+	{
+		return value;
+	}
 }

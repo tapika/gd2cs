@@ -8,3 +8,8 @@ class InnerType:
 	var Count := 2
 	var Label := "nested"
 	static var SharedCount := 3
+
+var Values : Array[NestedClasses.InnerType]
+
+func identity(value: NestedClasses.InnerType) -> NestedClasses.InnerType:
+	return value

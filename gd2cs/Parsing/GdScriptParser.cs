@@ -324,6 +324,9 @@ public sealed class GdScriptParser : IScriptParser
     private TypeReference ParseType()
     {
         var name = tokens.Expect(TokenKind.Identifier).Text;
+        // Keep nested-class qualification before parsing container type arguments.
+        while (tokens.TryConsume(TokenKind.Dot))
+            name += "." + tokens.Expect(TokenKind.Identifier).Text;
         var arguments = new List<TypeReference>();
         if (tokens.TryConsume(TokenKind.OpenBracket))
         {
