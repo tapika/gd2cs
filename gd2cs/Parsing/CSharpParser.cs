@@ -331,11 +331,15 @@ public sealed class CSharpParser : IScriptParser
 
     private TypeReference ParseType()
     {
+        var typeToken = tokens.Current;
         var name = tokens.Expect(TokenKind.Identifier).Text;
         while (tokens.TryConsume(TokenKind.Dot))
         {
             name += "." + tokens.Expect(TokenKind.Identifier).Text;
         }
+        // GDScript has one float spelling; this tool deliberately maps it to C# float.
+        if (name is "double" or "Double" or "System.Double")
+            throw new ParseException("C# double is not supported; use float instead.", typeToken.Line, typeToken.Column);
         if (name is "Godot.Collections.Array" or "Godot.Collections.Dictionary")
             name = name["Godot.Collections.".Length..];
 

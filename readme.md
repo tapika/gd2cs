@@ -80,6 +80,13 @@ The corresponding GDScript class uses `static var Count` and `static func getCou
 
 ## Unsupported language features
 
+### C# double
+
+`gd2cs` maps C# `float` to GDScript `float` in both directions. C# `double` (`System.Double`) is unsupported and produces a translation error. This is a tooling choice: GDScript `Vector2/3` uses 32-bit `float`, and even thus some properties like `SpinBox.MinValue` use `double`, but mixing two different type can produce precision errors.
+ Easier to support all types as `float`'s.
+
+Godot is also possible to compile with the `precision=double` option, let me know if you need support for such custom build, maybe `gd2cs` can be made reconfigurable then.
+
 ### C# object initializers
 
 C# can assign properties as part of object construction:
@@ -111,4 +118,3 @@ void func(string? s = null)
 ```
 
 Gd script does not supports that one, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
-

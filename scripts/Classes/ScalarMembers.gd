@@ -16,6 +16,9 @@ var Ratio := 1.5
 
 var Label := "sample"
 
+func scale(value: float) -> float:
+    return value * Ratio
+
 # Shared by all instances.
 static var SharedCount := 4
 static var SharedLabel : String

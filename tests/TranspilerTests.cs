@@ -112,6 +112,24 @@ public sealed class TranspilerTests
         Assert.Equal(File.ReadAllText(Fixture(baseName + ".gd")), gdscript);
     }
 
+    [Theory]
+    [InlineData("double")]
+    [InlineData("Double")]
+    [InlineData("System.Double")]
+    [InlineData("Godot.Collections.Array<double>")]
+    public void RejectDouble(string type)
+    {
+        var source = File.ReadAllText(Fixture("Classes/ScalarMembers.cs"))
+            .Replace("float", type, StringComparison.Ordinal);
+
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Transpile(
+            source, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
+
+        Assert.Equal("C# double is not supported; use float instead.", error.Message);
+        Assert.True(error.Line > 0);
+        Assert.True(error.Column > 0);
+    }
+
     public static IEnumerable<object[]> ScriptPairs()
     {
         foreach (var pair in DiscoverScriptPairs())
