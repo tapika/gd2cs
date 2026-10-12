@@ -22,6 +22,7 @@ func scale(value: float) -> float:
 # Shared by all instances.
 static var SharedCount := 4
 static var SharedLabel : String
+static var SharedValues : Array[int]
 
 static func resetShared():
     SharedCount = 0

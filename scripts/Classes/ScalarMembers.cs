@@ -10,7 +10,7 @@ public partial class ScalarMembers : RefCounted
     // Value assigned later.
     public float PendingA;
     // Typed collection assigned later.
-    public Godot.Collections.Array<int> IntegerValues;
+    public Godot.Collections.Array<int> IntegerValues = new Godot.Collections.Array<int>();
     public string TextValue;
 
     // Ratio has a multiline note.
@@ -27,6 +27,7 @@ public partial class ScalarMembers : RefCounted
     // Shared by all instances.
     public static int SharedCount = 4;
     public static string SharedLabel;
+    public static Godot.Collections.Array<int> SharedValues = new Godot.Collections.Array<int>();
 
     public static void resetShared()
     {

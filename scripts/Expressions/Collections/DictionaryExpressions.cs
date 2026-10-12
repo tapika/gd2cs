@@ -13,10 +13,10 @@ public partial class DictionaryExpressions : RefCounted
 
 	public Godot.Collections.Dictionary<string, int> Empty = new Godot.Collections.Dictionary<string, int> {};
 	public Godot.Collections.Dictionary<string, Variant> Inline = new Godot.Collections.Dictionary<string, Variant> {{ "count", 2 }, { "label", "value" }};
-	public Godot.Collections.Dictionary<string, Node3D> Nodes;
-	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>> ObjectEntries;
-	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>> MixedEntries;
-	public Godot.Collections.Array<Godot.Collections.Dictionary<string, DictionaryExpressions.Item>> CustomEntries;
+	public Godot.Collections.Dictionary<string, Node3D> Nodes = new Godot.Collections.Dictionary<string, Node3D>();
+	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>> ObjectEntries = new Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>();
+	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>> MixedEntries = new Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>>();
+	public Godot.Collections.Array<Godot.Collections.Dictionary<string, DictionaryExpressions.Item>> CustomEntries = new Godot.Collections.Array<Godot.Collections.Dictionary<string, DictionaryExpressions.Item>>();
 
 	public void record(Node3D node, Vector3 size)
 	{
@@ -28,7 +28,8 @@ public partial class DictionaryExpressions : RefCounted
 
 	public void inspect()
 	{
-		Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>> pending = null;
+		Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>> pending = new Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>();
+		Godot.Collections.Dictionary<string, int> pendingCounts = new Godot.Collections.Dictionary<string, int>();
 		Godot.Collections.Dictionary<string, Variant> compact = new Godot.Collections.Dictionary<string, Variant> {{ "enabled", true }, { "offset", new Vector3(1.0f, 2.0f, 3.0f) }};
 		Godot.Collections.Dictionary<string, Variant> nested = new Godot.Collections.Dictionary<string, Variant> {{ "entry", compact }};
 		Godot.Collections.Dictionary<string, int> mixed = new Godot.Collections.Dictionary<string, int> {{ "first", 1 },

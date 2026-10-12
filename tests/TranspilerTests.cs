@@ -113,6 +113,30 @@ public sealed class TranspilerTests
     }
 
     [Fact]
+    public static void CheckContainerNulls()
+    {
+        var cs = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.cs"));
+        foreach (var value in new[] { "null", "default" })
+        {
+            foreach (var constructor in new[]
+            {
+                "new Godot.Collections.Dictionary<string, Node3D>()",
+                "new Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>()",
+                "new Godot.Collections.Dictionary<string, int>()"
+            })
+            {
+                var source = cs.Replace(constructor, value);
+                var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
+                Assert.Equal("Null containers are not supported; use an empty container constructor or omit the initializer.", error.Message);
+                var lines = source.ReplaceLineEndings("\n").Split('\n');
+                var line = Array.FindIndex(lines, text => text.Contains(" = " + value + ";", StringComparison.Ordinal));
+                Assert.Equal(line + 1, error.Line);
+                Assert.Equal(lines[line].IndexOf(" = " + value + ";", StringComparison.Ordinal) + 4, error.Column);
+            }
+        }
+    }
+
+    [Fact]
     public static void CheckDictionaryReads()
     {
         var transpiler = new Transpiler();

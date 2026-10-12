@@ -307,8 +307,8 @@ public sealed class GdScriptParser : IScriptParser
         if (inferred)
             type = new TypeReference(value.Kind == TokenKind.String ? "string" : value.Text is "true" or "false" ? "bool" : value.Text.Contains('.') ? "float" : "int");
         return isConstant
-            ? new ConstantDeclaration(name, type, new ValueExpression(value.Text), inferred)
-            : new FieldDeclaration(name, type, new ValueExpression(value.Text), inferred);
+            ? new ConstantDeclaration(name, type, SourceLocations.Record(new ValueExpression(value.Text), value), inferred)
+            : new FieldDeclaration(name, type, SourceLocations.Record(new ValueExpression(value.Text), value), inferred);
     }
 
     // Infers homogeneous array declarations so indexed access can be bound to the element type.
@@ -551,10 +551,10 @@ public sealed class GdScriptParser : IScriptParser
         var value = tokens.Current;
         tokens.Expect(value.Kind);
         if (value.Kind != TokenKind.Identifier)
-            return new ValueExpression(value.Text);
+            return SourceLocations.Record(new ValueExpression(value.Text), value);
         if (value.Text == "self")
             return new CurrentInstanceExpression();
-        return new ValueExpression(value.Text);
+        return SourceLocations.Record(new ValueExpression(value.Text), value);
     }
 
     // Multiline lambda bodies end at the owning declaration's indentation, not the func column.

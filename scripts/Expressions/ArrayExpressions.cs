@@ -16,8 +16,8 @@ public partial class ArrayExpressions : RefCounted
 		}
 	}
 
-	public Godot.Collections.Array<int> PendingValues;
-	public Godot.Collections.Array<ElementValue> PendingElements;
+	public Godot.Collections.Array<int> PendingValues = new Godot.Collections.Array<int>();
+	public Godot.Collections.Array<ElementValue> PendingElements = new Godot.Collections.Array<ElementValue>();
 
 	public Godot.Collections.Array<int> InlineValues = gdArray(1, 2,
 		3);

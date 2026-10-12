@@ -128,6 +128,10 @@ internal sealed class SemanticNormalizer
     {
         if (value is null)
             return null;
+        // Null containers cannot represent GDScript's non-null empty default.
+        if (type?.Kind is TypeKind.Array or TypeKind.Dictionary
+            && value is ValueExpression { Text: "null" or "default" })
+            throw SourceLocations.Error(value, "Null containers are not supported; use an empty container constructor or omit the initializer.");
         // GDScript literals obtain their key/value types from an explicit declaration.
         if (value is DictionaryExpression dictionary && type?.Kind == TypeKind.Dictionary
             && type.TypeArguments.Count == 2)

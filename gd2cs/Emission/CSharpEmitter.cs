@@ -126,7 +126,10 @@ public sealed class CSharpEmitter : IScriptEmitter
         output.Append(field.Name);
         if (field.Initializer is null)
         {
-            output.AppendLine(";");
+            if (field.Type.Kind is TypeKind.Array or TypeKind.Dictionary)
+                EmitDefaultInitializer(output, field.Type);
+            else
+                output.AppendLine(";");
             return;
         }
         output.Append(" = ");
@@ -605,6 +608,14 @@ public sealed class CSharpEmitter : IScriptEmitter
     private static void EmitDefaultInitializer(StringBuilder output, TypeReference type)
     {
         output.Append(" = ");
+        // Godot containers start empty, unlike ordinary object references which start null.
+        if (type.Kind is TypeKind.Array or TypeKind.Dictionary)
+        {
+            output.Append("new ");
+            EmitType(output, type);
+            output.AppendLine("();");
+            return;
+        }
         output.Append(type.Kind switch
         {
             TypeKind.Bool => "false",

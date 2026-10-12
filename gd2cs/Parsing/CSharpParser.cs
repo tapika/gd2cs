@@ -143,6 +143,9 @@ public sealed class CSharpParser : IScriptParser
         tokens.Expect(TokenKind.Semicolon);
         EndOfLine();
         // Initialized fields can use GDScript's inferred declaration syntax, including arrays.
+        // Fold only exact empty container construction; populated or different types retain their values.
+        if (IsContainerDefault(type, value))
+            return new FieldDeclaration(name, type, null, false);
         return new FieldDeclaration(name, type, value, value is not DictionaryExpression);
     }
 
@@ -619,10 +622,10 @@ public sealed class CSharpParser : IScriptParser
 
         var value = ConsumeValue();
         if (value.Kind != TokenKind.Identifier)
-            return new ValueExpression(value.Text.TrimEnd('f', 'F'));
+            return SourceLocations.Record(new ValueExpression(value.Text.TrimEnd('f', 'F')), value);
         if (value.Text == "this")
             return new CurrentInstanceExpression();
-        return new ValueExpression(value.Text);
+        return SourceLocations.Record(new ValueExpression(value.Text), value);
     }
 
     // Callable.From generic arguments supply parameter/result types for an untyped C# lambda.
@@ -822,7 +825,8 @@ public sealed class CSharpParser : IScriptParser
     // Collapses the C# defaults emitted for uninitialized typed GDScript locals back to one model shape.
     private static bool IsGeneratedDefault(TypeReference type, Expression expression) => expression switch
     {
-        ValueExpression { Text: "null" } when type.Kind is TypeKind.UserObject or TypeKind.GodotObject or TypeKind.Array or TypeKind.Dictionary => true,
+        ObjectCreationExpression when IsContainerDefault(type, expression) => true,
+        ValueExpression { Text: "null" } when type.Kind is TypeKind.UserObject or TypeKind.GodotObject => true,
         ValueExpression { Text: "false" } when type.Kind == TypeKind.Bool => true,
         ValueExpression { Text: "0" } when type.Kind is TypeKind.Int32 or TypeKind.Int64 => true,
         ValueExpression { Text: "0.0" } when type.Kind is TypeKind.Float32 or TypeKind.Float64 => true,
@@ -830,6 +834,17 @@ public sealed class CSharpParser : IScriptParser
         ValueExpression { Text: "default" } when type.Kind is TypeKind.StringName or TypeKind.NodePath or TypeKind.Callable => true,
         _ => false
     };
+
+    private static bool IsContainerDefault(TypeReference type, Expression expression) =>
+        type.Kind is TypeKind.Array or TypeKind.Dictionary
+        && expression is ObjectCreationExpression creation
+        && creation.Arguments.Arguments.Count == 0
+        && SameType(type, creation.Type);
+
+    // TypeReference contains lists, so record equality cannot compare independently parsed generic types.
+    private static bool SameType(TypeReference left, TypeReference right) =>
+        left.Name == right.Name && left.TypeArguments.Count == right.TypeArguments.Count
+        && left.TypeArguments.Zip(right.TypeArguments).All(pair => SameType(pair.First, pair.Second));
 
     private Token ConsumeValue()
     {

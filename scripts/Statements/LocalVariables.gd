@@ -6,6 +6,8 @@ class Element:
 
 func evaluate(value: int) -> int:
 	var pending : int
+	var pendingValues : Array[int]
+	pendingValues.append(value)
 	var first : int = value
 	var result := first
 	return result

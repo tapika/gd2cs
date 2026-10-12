@@ -21,6 +21,7 @@ func record(node: Node3D, size: Vector3):
 
 func inspect():
 	var pending : Array[Dictionary] #[String, Node3D]
+	var pendingCounts : Dictionary[String, int]
 	var compact : Dictionary[String, Variant] = {"enabled": true, "offset": Vector3(1.0, 2.0, 3.0)}
 	var nested : Dictionary[String, Variant] = {"entry": compact}
 	var mixed : Dictionary[String, int] = {"first": 1,

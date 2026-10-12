@@ -117,7 +117,9 @@ C# uses `entry["node"].AsGodotObject() as Node` for object casts and `entry["off
 var values : Array[int]
 ```
 
-Nonempty literals can still use type inference, for example `var values := [1, 2]`. 
+Arrays and dictionaries declared without initializers start empty in GDScript. gd2cs emits `new Godot.Collections.Array<T>()` or `new Godot.Collections.Dictionary<TKey, TValue>()` for C# fields (including static fields) and locals. Backtranslation folds an empty constructor of the exact declared type back to an omitted initializer. Explicit C# container `null` or `default` initializers are rejected rather than silently converted to empty containers; ordinary object references are not automatically constructed.
+
+Nonempty literals can still use type inference, for example `var values := [1, 2]`.
 
 ### C# double
 

@@ -18,8 +18,8 @@ public partial class CollectionOperations : RefCounted
 	}
 
 	public Godot.Collections.Array<int> Values = gdArray(1, 2, 3);
-	public Godot.Collections.Array<CustomValue> CustomValues;
-	public Godot.Collections.Dictionary<string, int> Entries;
+	public Godot.Collections.Array<CustomValue> CustomValues = new Godot.Collections.Array<CustomValue>();
+	public Godot.Collections.Dictionary<string, int> Entries = new Godot.Collections.Dictionary<string, int>();
 	public CustomValue Custom;
 
 	public void inspect()
