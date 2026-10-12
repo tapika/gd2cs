@@ -80,6 +80,10 @@ internal sealed class SemanticNormalizer
     // Recurses only into class elements that can contain expressions or nested scopes.
     private SyntaxElement NormalizeClassElement(SyntaxElement element, BindingScope scope) => element switch
     {
+        ConstantDeclaration constant when constant.Value is DictionaryExpression => constant with
+        {
+            Value = NormalizeExpression(constant.Value, scope)
+        },
         FieldDeclaration field => field with
         {
             Initializer = field.Initializer is null ? null : NormalizeExpression(field.Initializer, scope)
@@ -344,6 +348,14 @@ internal sealed class SemanticNormalizer
                     .Select(element => element with { Value = NormalizeExpression(element.Value, scope) })
                     .ToList()
             },
+            DictionaryExpression dictionary => dictionary with
+            {
+                Entries = dictionary.Entries.Select(entry => entry with
+                {
+                    Key = NormalizeExpression(entry.Key, scope),
+                    Value = NormalizeExpression(entry.Value, scope)
+                }).ToList()
+            },
             InvocationExpression invocation => NormalizeInvocation(invocation, scope),
             GodotGlobalFunctionExpression global => global with
             {
@@ -600,6 +612,7 @@ internal sealed class SemanticNormalizer
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
         StringOperationExpression operation => StringMappings.ResultType(operation.Operation),
+        DictionaryExpression => new TypeReference("Dictionary"),
         ArrayExpression array => new TypeReference(
             "Array",
             array.Elements.Count == 0 || ResolveType(array.Elements[0].Value, scope) is not { } elementType

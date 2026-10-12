@@ -293,6 +293,15 @@ public sealed class GdScriptParser : IScriptParser
                 ? new ConstantDeclaration(name, type, array, inferred)
                 : new FieldDeclaration(name, type, array, inferred);
         }
+        if (tokens.Current.Kind == TokenKind.OpenBrace)
+        {
+            var dictionary = ParseDictionary();
+            if (inferred)
+                type = new TypeReference("Dictionary");
+            return isConstant
+                ? new ConstantDeclaration(name, type, dictionary, inferred)
+                : new FieldDeclaration(name, type, dictionary, inferred);
+        }
         var value = tokens.Current;
         tokens.Expect(value.Kind);
         if (inferred)
@@ -322,6 +331,7 @@ public sealed class GdScriptParser : IScriptParser
         ValueExpression => new TypeReference("int"),
         ObjectCreationExpression creation => creation.Type,
         ArrayExpression array => InferArrayType(array),
+        DictionaryExpression => new TypeReference("Dictionary"),
         _ => new TypeReference("Variant")
     };
 
@@ -363,6 +373,28 @@ public sealed class GdScriptParser : IScriptParser
         }
         tokens.Expect(TokenKind.CloseBracket);
         return new ArrayExpression(elements, startsOnNewLine);
+    }
+
+    // Reads dictionary entries without conflating entry separators with call arguments.
+    private DictionaryExpression ParseDictionary()
+    {
+        tokens.Expect(TokenKind.OpenBrace);
+        var lineBreaks = tokens.ConsumeLineBreaks();
+        var entries = new List<DictionaryEntry>();
+        var trailingComma = false;
+        while (tokens.Current.Kind != TokenKind.CloseBrace)
+        {
+            var key = ParseExpression();
+            tokens.Expect(TokenKind.Colon);
+            var value = ParseExpression();
+            entries.Add(new DictionaryEntry(key, value, lineBreaks));
+            trailingComma = tokens.TryConsume(TokenKind.Comma);
+            lineBreaks = tokens.ConsumeLineBreaks();
+            if (!trailingComma)
+                break;
+        }
+        tokens.Expect(TokenKind.CloseBrace);
+        return new DictionaryExpression(entries, lineBreaks, trailingComma);
     }
 
     // Builds precedence-aware binary and conditional expressions from the token stream.
@@ -453,6 +485,8 @@ public sealed class GdScriptParser : IScriptParser
 
     private Expression ParsePrimaryExpression()
     {
+        if (tokens.Current.Kind == TokenKind.OpenBrace)
+            return ParseDictionary();
         if (tokens.Current.Text == "func")
             return ParseLambda(tokens.Current.Column);
         if (tokens.Current.Kind == TokenKind.OpenBracket)

@@ -146,6 +146,18 @@ public sealed record ArrayElement(
     Expression Value,
     bool StartsOnNewLine);
 
+// An untyped Godot dictionary preserves heterogeneous values and source entry order.
+public sealed record DictionaryExpression(
+    List<DictionaryEntry> Entries,
+    int ClosingLineBreaks,
+    bool HasTrailingComma) : Expression;
+
+// Entry layout is independent of its key/value expressions, including blank lines.
+public sealed record DictionaryEntry(
+    Expression Key,
+    Expression Value,
+    int LeadingLineBreaks);
+
 // Invokes a structural target without flattening away its receiver expression.
 public sealed record InvocationExpression(
     Expression Target,

@@ -74,7 +74,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 case ConstantDeclaration constant:
                     output.Append(memberIndent + "const ");
                     output.Append(constant.Name);
-                    if (constant.Value is ArrayExpression)
+                    if (constant.Value is ArrayExpression or DictionaryExpression)
                     {
                         output.Append(space_colon);
                         EmitType(output, constant.Type);
@@ -340,6 +340,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     output.Append(".new");
                 EmitArguments(output, creation.Arguments, indent);
                 break;
+            case DictionaryExpression dictionary:
+                EmitDictionary(output, dictionary, indent);
+                break;
             case ArrayExpression array:
                 EmitArray(output, array, indent);
                 break;
@@ -503,6 +506,34 @@ public sealed class GdScriptEmitter : IScriptEmitter
             EmitExpression(output, value.Value, indent);
         }
         output.Append(']');
+    }
+
+    // Reconstructs entry boundaries without adding line breaks to compact literals.
+    private void EmitDictionary(StringBuilder output, DictionaryExpression dictionary, string indent)
+    {
+        output.Append('{');
+        for (var index = 0; index < dictionary.Entries.Count; index++)
+        {
+            var entry = dictionary.Entries[index];
+            if (index > 0)
+                output.Append(',');
+            for (var line = 0; line < entry.LeadingLineBreaks; line++)
+                output.AppendLine();
+            if (entry.LeadingLineBreaks > 0)
+                output.Append(indent + "\t");
+            else if (index > 0)
+                output.Append(' ');
+            EmitExpression(output, entry.Key, indent + "\t");
+            output.Append(": ");
+            EmitExpression(output, entry.Value, indent + "\t");
+        }
+        if (dictionary.HasTrailingComma)
+            output.Append(',');
+        for (var line = 0; line < dictionary.ClosingLineBreaks; line++)
+            output.AppendLine();
+        if (dictionary.ClosingLineBreaks > 0)
+            output.Append(indent);
+        output.Append('}');
     }
 
     private void EmitArray(StringBuilder output, ArrayExpression array, string indent)

@@ -455,6 +455,30 @@ public sealed class CSharpParser : IScriptParser
         return new ArrayExpression(elements, startsOnNewLine);
     }
 
+    // Collection initializer entries map directly to GDScript dictionary key/value pairs.
+    private DictionaryExpression ParseDictionary()
+    {
+        tokens.Expect(TokenKind.OpenBrace);
+        var lineBreaks = tokens.ConsumeLineBreaks();
+        var entries = new List<DictionaryEntry>();
+        var trailingComma = false;
+        while (tokens.Current.Kind != TokenKind.CloseBrace)
+        {
+            tokens.Expect(TokenKind.OpenBrace);
+            var key = ParseExpression();
+            tokens.Expect(TokenKind.Comma);
+            var value = ParseExpression();
+            tokens.Expect(TokenKind.CloseBrace);
+            entries.Add(new DictionaryEntry(key, value, lineBreaks));
+            trailingComma = tokens.TryConsume(TokenKind.Comma);
+            lineBreaks = tokens.ConsumeLineBreaks();
+            if (!trailingComma)
+                break;
+        }
+        tokens.Expect(TokenKind.CloseBrace);
+        return new DictionaryExpression(entries, lineBreaks, trailingComma);
+    }
+
     // Normalizes C# operators while building precedence-aware expression trees.
     private Expression ParseExpression(int minimumPrecedence = 0)
     {
@@ -560,7 +584,20 @@ public sealed class CSharpParser : IScriptParser
         {
             tokens.Expect(TokenKind.Identifier, "new");
             var type = ParseType();
+            if (type.Kind == TypeKind.Dictionary && type.TypeArguments.Count == 0
+                && tokens.PeekAfterNewLines().Kind == TokenKind.OpenBrace)
+            {
+                tokens.ConsumeLineBreaks();
+                return ParseDictionary();
+            }
             var arguments = ParseArguments();
+            if (type.Kind == TypeKind.Dictionary && type.TypeArguments.Count == 0
+                && arguments.Arguments.Count == 0
+                && tokens.PeekAfterNewLines().Kind == TokenKind.OpenBrace)
+            {
+                tokens.ConsumeLineBreaks();
+                return ParseDictionary();
+            }
             return new ObjectCreationExpression(type, arguments);
         }
 

@@ -105,9 +105,9 @@ public sealed class CSharpEmitter : IScriptEmitter
 
     private void EmitConstant(StringBuilder output, ConstantDeclaration constant, string indent)
     {
-        var isArray = constant.Value is ArrayExpression;
+        var isCollection = constant.Value is ArrayExpression or DictionaryExpression;
         output.Append(indent + "    public ");
-        output.Append(isArray ? "static readonly " : "const ");
+        output.Append(isCollection ? "static readonly " : "const ");
         EmitType(output, constant.Type);
         output.Append(' ');
         output.Append(constant.Name);
@@ -177,6 +177,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append("new ");
                 EmitType(output, creation.Type);
                 EmitArguments(output, creation.Arguments, indent);
+                break;
+            case DictionaryExpression dictionary:
+                EmitDictionary(output, dictionary, indent);
                 break;
             case ArrayExpression array:
                 EmitArray(output, array, indent);
@@ -376,6 +379,36 @@ public sealed class CSharpEmitter : IScriptEmitter
             }
         }
         output.Append('"');
+    }
+
+    // Reconstructs entry boundaries without adding line breaks to compact literals.
+    private void EmitDictionary(StringBuilder output, DictionaryExpression dictionary, string indent)
+    {
+        output.Append("new Godot.Collections.Dictionary {");
+        for (var index = 0; index < dictionary.Entries.Count; index++)
+        {
+            var entry = dictionary.Entries[index];
+            if (index > 0)
+                output.Append(',');
+            for (var line = 0; line < entry.LeadingLineBreaks; line++)
+                output.AppendLine();
+            if (entry.LeadingLineBreaks > 0)
+                output.Append(indent + "    ");
+            else if (index > 0)
+                output.Append(' ');
+            output.Append("{ ");
+            EmitExpression(output, entry.Key, indent + "    ");
+            output.Append(", ");
+            EmitExpression(output, entry.Value, indent + "    ");
+            output.Append(" }");
+        }
+        if (dictionary.HasTrailingComma)
+            output.Append(',');
+        for (var line = 0; line < dictionary.ClosingLineBreaks; line++)
+            output.AppendLine();
+        if (dictionary.ClosingLineBreaks > 0)
+            output.Append(indent);
+        output.Append('}');
     }
 
     private void EmitArray(StringBuilder output, ArrayExpression array, string indent)
