@@ -435,8 +435,11 @@ public sealed class CSharpParser : IScriptParser
 
     private ArrayExpression ParseArray()
     {
-        tokens.Expect(TokenKind.Identifier, "gdArray");
+        var opening = tokens.Expect(TokenKind.Identifier, "gdArray");
         tokens.Expect(TokenKind.OpenParenthesis);
+        // Apply the same empty-literal restriction when backtranslating the array helper.
+        if (tokens.PeekAfterNewLines().Kind == TokenKind.CloseParenthesis)
+            throw new ParseException("Empty array literals are not supported; declare an array type without an initializer instead.", opening.Line, opening.Column);
         var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
         var elements = new List<ArrayElement>();
         while (tokens.Current.Kind != TokenKind.CloseParenthesis)

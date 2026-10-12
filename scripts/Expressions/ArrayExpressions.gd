@@ -9,6 +9,9 @@ class ElementValue:
 		Number = number
 		Text = text
 
+var PendingValues : Array[int]
+var PendingElements : Array[ElementValue]
+
 var InlineValues := [1, 2,
 	3]
 

@@ -80,6 +80,16 @@ The corresponding GDScript class uses `static var Count` and `static func getCou
 
 ## Unsupported language features
 
+### Empty array literals
+
+`gd2cs` requires array literals to contain at least one element. Empty literals such as `var values := []` and `var values : Array[int] = []` are rejected. For an initially empty array, declare its type without an initializer:
+
+```gdscript
+var values : Array[Dictionary]
+```
+
+Nonempty literals can still use type inference, for example `var values := [1, 2]`. 
+
 ### C# double
 
 `gd2cs` maps C# `float` to GDScript `float` in both directions. C# `double` (`System.Double`) is unsupported and produces a translation error. This is a tooling choice: GDScript `Vector2/3` uses 32-bit `float`, and even thus some properties like `SpinBox.MinValue` use `double`, but mixing two different type can produce precision errors.

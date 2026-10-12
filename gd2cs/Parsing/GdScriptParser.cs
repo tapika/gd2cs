@@ -356,7 +356,10 @@ public sealed class GdScriptParser : IScriptParser
 
     private ArrayExpression ParseArray()
     {
-        tokens.Expect(TokenKind.OpenBracket);
+        var opening = tokens.Expect(TokenKind.OpenBracket);
+        // Empty literals carry no element type; require a typed declaration without an initializer.
+        if (tokens.PeekAfterNewLines().Kind == TokenKind.CloseBracket)
+            throw new ParseException("Empty array literals are not supported; declare an array type without an initializer instead.", opening.Line, opening.Column);
         var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
         var elements = new List<ArrayElement>();
         while (tokens.Current.Kind != TokenKind.CloseBracket)

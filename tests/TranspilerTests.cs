@@ -112,6 +112,34 @@ public sealed class TranspilerTests
         Assert.Equal(File.ReadAllText(Fixture(baseName + ".gd")), gdscript);
     }
 
+    [Fact]
+    public static void RejectEmptyArrays()
+    {
+        var transpiler = new Transpiler();
+        var gd = File.ReadAllText(Fixture("Expressions/ArrayExpressions.gd")).ReplaceLineEndings("\n");
+        var cs = File.ReadAllText(Fixture("Expressions/ArrayExpressions.cs")).ReplaceLineEndings("\n");
+        foreach (var literal in new[] { "[]", "[\n\n\t]" })
+        {
+            foreach (var declaration in new[] { "var InlineValues := ", "var InlineValues : Array[int] = " })
+                Reject(gd.Replace("var InlineValues := [1, 2,\n\t3]", declaration + literal), Language.ScriptLanguage.GdScript);
+            Reject(gd.Replace("[4.0, 5.0, 6.0]", literal), Language.ScriptLanguage.GdScript);
+            Reject(gd.Replace("ElementValue.new(10, \"first\")", literal), Language.ScriptLanguage.GdScript);
+        }
+        foreach (var literal in new[] { "gdArray()", "gdArray(\n\n\t)" })
+        {
+            Reject(cs.Replace("gdArray(1, 2,\n\t\t3)", literal), Language.ScriptLanguage.CSharp);
+            Reject(cs.Replace("gdArray(4.0f, 5.0f, 6.0f)", literal), Language.ScriptLanguage.CSharp);
+        }
+
+        void Reject(string source, Language.ScriptLanguage language)
+        {
+            var error = Assert.Throws<Parsing.ParseException>(() => transpiler.Parse(source, language));
+            Assert.Equal("Empty array literals are not supported; declare an array type without an initializer instead.", error.Message);
+            Assert.True(error.Line > 0);
+            Assert.True(error.Column > 0);
+        }
+    }
+
     [Theory]
     [InlineData("double")]
     [InlineData("Double")]
