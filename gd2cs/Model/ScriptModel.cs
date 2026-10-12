@@ -221,6 +221,8 @@ public enum CollectionOperation
     Append,
     Clear,
     RemoveValue,
+    // Removes by position, unlike RemoveValue which searches for an equal element.
+    RemoveAt,
     RemoveKey,
     ContainsValue,
     ContainsKey

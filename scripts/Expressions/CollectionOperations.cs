@@ -10,6 +10,11 @@ public partial class CollectionOperations : RefCounted
 		{
 			return 4;
 		}
+
+		public int remove_at(int index)
+		{
+			return index;
+		}
 	}
 
 	public Godot.Collections.Array<int> Values = gdArray(1, 2, 3);
@@ -29,12 +34,19 @@ public partial class CollectionOperations : RefCounted
 		var selectedValue = CustomValues[0];
 		var createdValue = new CustomValue();
 		localValues.Add(4);
+		localValues.RemoveAt(0);
 		Values.Clear();
 		Entries.Clear();
 		Values.Remove(2);
 		Entries.Remove("second");
 
 		int customSize = Custom.size();
+		Custom.remove_at(0);
+	}
+
+	public void removeItem(Godot.Collections.Array<CustomValue> values, int index)
+	{
+		values.RemoveAt(index);
 	}
 
 	public bool contains(Godot.Collections.Array<int> values, Godot.Collections.Dictionary<string, int> entries)
