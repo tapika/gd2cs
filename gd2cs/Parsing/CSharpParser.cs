@@ -143,7 +143,7 @@ public sealed class CSharpParser : IScriptParser
         tokens.Expect(TokenKind.Semicolon);
         EndOfLine();
         // Initialized fields can use GDScript's inferred declaration syntax, including arrays.
-        return new FieldDeclaration(name, type, value, true);
+        return new FieldDeclaration(name, type, value, value is not DictionaryExpression);
     }
 
     private ConstructorDeclaration ParseCallable()
@@ -396,6 +396,8 @@ public sealed class CSharpParser : IScriptParser
             while (tokens.TryConsume(TokenKind.Comma));
             tokens.Expect(TokenKind.GreaterThan);
         }
+        if (name == "Dictionary" && arguments.Count != 2)
+            throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
         return new TypeReference(name == "String" ? "string" : name, arguments);
     }
 
@@ -459,9 +461,9 @@ public sealed class CSharpParser : IScriptParser
     }
 
     // Collection initializer entries map directly to GDScript dictionary key/value pairs.
-    private DictionaryExpression ParseDictionary()
+    private DictionaryExpression ParseDictionary(TypeReference type)
     {
-        tokens.Expect(TokenKind.OpenBrace);
+        var opening = tokens.Expect(TokenKind.OpenBrace);
         var lineBreaks = tokens.ConsumeLineBreaks();
         var entries = new List<DictionaryEntry>();
         var trailingComma = false;
@@ -479,7 +481,7 @@ public sealed class CSharpParser : IScriptParser
                 break;
         }
         tokens.Expect(TokenKind.CloseBrace);
-        return new DictionaryExpression(entries, lineBreaks, trailingComma);
+        return SourceLocations.Record(new DictionaryExpression(entries, lineBreaks, trailingComma, type), opening);
     }
 
     // Normalizes C# operators while building precedence-aware expression trees.
@@ -587,19 +589,19 @@ public sealed class CSharpParser : IScriptParser
         {
             tokens.Expect(TokenKind.Identifier, "new");
             var type = ParseType();
-            if (type.Kind == TypeKind.Dictionary && type.TypeArguments.Count == 0
+            if (type.Kind == TypeKind.Dictionary
                 && tokens.PeekAfterNewLines().Kind == TokenKind.OpenBrace)
             {
                 tokens.ConsumeLineBreaks();
-                return ParseDictionary();
+                return ParseDictionary(type);
             }
             var arguments = ParseArguments();
-            if (type.Kind == TypeKind.Dictionary && type.TypeArguments.Count == 0
+            if (type.Kind == TypeKind.Dictionary
                 && arguments.Arguments.Count == 0
                 && tokens.PeekAfterNewLines().Kind == TokenKind.OpenBrace)
             {
                 tokens.ConsumeLineBreaks();
-                return ParseDictionary();
+                return ParseDictionary(type);
             }
             return new ObjectCreationExpression(type, arguments);
         }

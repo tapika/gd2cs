@@ -94,11 +94,19 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     if (field.Initializer is null)
                     {
                         output.Append(space_colon);
-                        EmitType(output, field.Type);
+                        EmitType(output, field.Type, true);
+                        EmitDictionaryHint(output, field.Type);
                         output.AppendLine();
                         break;
                     }
-                    output.Append(" := ");
+                    if (field.Initializer is DictionaryExpression)
+                    {
+                        output.Append(space_colon);
+                        EmitType(output, field.Type);
+                        output.Append(" = ");
+                    }
+                    else
+                        output.Append(" := ");
                     EmitExpression(output, field.Initializer, memberIndent);
                     output.AppendLine();
                     break;
@@ -183,7 +191,24 @@ public sealed class GdScriptEmitter : IScriptEmitter
             output.Append(indent);
     }
 
-    private static void EmitType(StringBuilder output, TypeReference type)
+    // Godot forbids nested typed collections; declaration hints retain the omitted schema.
+    private static void EmitDictionaryHint(StringBuilder output, TypeReference type)
+    {
+        if (type.Kind != TypeKind.Array || type.TypeArguments.Count != 1
+            || type.TypeArguments[0].Kind != TypeKind.Dictionary)
+            return;
+        output.Append(" #[");
+        var arguments = type.TypeArguments[0].TypeArguments;
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (index > 0)
+                output.Append(", ");
+            EmitType(output, arguments[index]);
+        }
+        output.Append(']');
+    }
+
+    private static void EmitType(StringBuilder output, TypeReference type, bool omitNestedDictionaryTypes = false)
     {
         output.Append(type.Kind == TypeKind.String ? "String" : type.Name);
         if (type.TypeArguments.Count == 0)
@@ -193,7 +218,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
         {
             if (index > 0)
                 output.Append(", ");
-            EmitType(output, type.TypeArguments[index]);
+            var argument = type.TypeArguments[index];
+            if (omitNestedDictionaryTypes && type.Kind == TypeKind.Array && argument.Kind == TypeKind.Dictionary)
+                output.Append("Dictionary");
+            else
+                EmitType(output, argument);
         }
         output.Append(']');
     }
@@ -240,9 +269,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     else if (statement.Typing is LocalTyping.Explicit or LocalTyping.InferredWithExplicitGdType)
                     {
                         output.Append(space_colon);
-                        EmitType(output, statement.Type ?? throw SourceLocations.Error(statement, "Explicit local requires a type."));
+                        EmitType(output, statement.Type ?? throw SourceLocations.Error(statement, "Explicit local requires a type."), true);
                         if (statement.Initializer is null)
                         {
+                            EmitDictionaryHint(output, statement.Type!);
                             output.AppendLine();
                             break;
                         }

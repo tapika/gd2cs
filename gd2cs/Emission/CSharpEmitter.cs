@@ -384,7 +384,9 @@ public sealed class CSharpEmitter : IScriptEmitter
     // Reconstructs entry boundaries without adding line breaks to compact literals.
     private void EmitDictionary(StringBuilder output, DictionaryExpression dictionary, string indent)
     {
-        output.Append("new Godot.Collections.Dictionary {");
+        output.Append("new ");
+        EmitType(output, dictionary.Type!);
+        output.Append(" {");
         for (var index = 0; index < dictionary.Entries.Count; index++)
         {
             var entry = dictionary.Entries[index];

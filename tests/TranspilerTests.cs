@@ -113,6 +113,51 @@ public sealed class TranspilerTests
     }
 
     [Fact]
+    public static void RejectUntypedDictionaries()
+    {
+        var gd = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.gd"));
+        var cs = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.cs"));
+        var gdSources = new[]
+        {
+            gd.Replace("Dictionary[String, Node3D]", "Dictionary"),
+            gd.Replace("Dictionary[String, Node3D]", "Array[Dictionary]"),
+            gd.Replace("var Empty : Dictionary[String, int] =", "var Empty :="),
+            gd.Replace("var compact : Dictionary[String, Variant] =", "var compact :="),
+            gd.Replace("\"entry\": compact", "\"entry\": {}"),
+            gd.Replace(" #[String, Node3D]", "")
+        };
+        var csSources = new[]
+        {
+            cs.Replace("Godot.Collections.Dictionary<string, Node3D>", "Godot.Collections.Dictionary"),
+            cs.Replace("Godot.Collections.Dictionary<string, Node3D>", "Godot.Collections.Array<Godot.Collections.Dictionary>"),
+            cs.Replace("new Godot.Collections.Dictionary<string, int>", "new Godot.Collections.Dictionary")
+        };
+        foreach (var source in gdSources)
+            Reject(source, Language.ScriptLanguage.GdScript);
+        foreach (var source in csSources)
+            Reject(source, Language.ScriptLanguage.CSharp);
+
+        foreach (var hint in new[] { "[String]", "[String,]", "[String, Node3D] trailing", "[String, Dictionary]" })
+        {
+            var source = gd.Replace("#[String, Node3D]", "#" + hint);
+            var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+            Assert.StartsWith("Invalid dictionary type hint:", error.Message);
+            var lines = source.ReplaceLineEndings("\n").Split('\n');
+            var line = Array.FindIndex(lines, text => text.StartsWith("var ObjectEntries", StringComparison.Ordinal));
+            Assert.Equal(line + 1, error.Line);
+            Assert.True(error.Column > lines[line].IndexOf('#'));
+        }
+
+        static void Reject(string source, Language.ScriptLanguage language)
+        {
+            var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+            Assert.Equal("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", error.Message);
+            Assert.True(error.Line > 1);
+            Assert.True(error.Column > 0);
+        }
+    }
+
+    [Fact]
     public static void RejectEmptyArrays()
     {
         var transpiler = new Transpiler();

@@ -146,11 +146,12 @@ public sealed record ArrayElement(
     Expression Value,
     bool StartsOnNewLine);
 
-// An untyped Godot dictionary preserves heterogeneous values and source entry order.
+// Explicit key/value types bind dictionary literals while preserving source entry order.
 public sealed record DictionaryExpression(
     List<DictionaryEntry> Entries,
     int ClosingLineBreaks,
-    bool HasTrailingComma) : Expression;
+    bool HasTrailingComma,
+    TypeReference? Type = null) : Expression;
 
 // Entry layout is independent of its key/value expressions, including blank lines.
 public sealed record DictionaryEntry(

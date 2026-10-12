@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using gd2cs.Model;
 
 namespace gd2cs.Parsing;
 
@@ -8,22 +7,22 @@ namespace gd2cs.Parsing;
 internal static class SourceLocations
 {
     private sealed record Position(int Line, int Column);
-    private static readonly ConditionalWeakTable<SyntaxElement, Position> positions = new();
+    private static readonly ConditionalWeakTable<object, Position> positions = new();
 
-    public static T Record<T>(T element, Token token) where T : SyntaxElement
+    public static T Record<T>(T element, Token token) where T : class
     {
         positions.Add(element, new Position(token.Line, token.Column));
         return element;
     }
 
-    public static T Copy<T>(SyntaxElement source, T target) where T : SyntaxElement
+    public static T Copy<T>(object source, T target) where T : class
     {
         if (positions.TryGetValue(source, out var position))
             positions.Add(target, position);
         return target;
     }
 
-    public static ParseException Error(SyntaxElement element, string message)
+    public static ParseException Error(object element, string message)
     {
         var position = positions.TryGetValue(element, out var recorded) ? recorded : new Position(1, 1);
         return new ParseException(message, position.Line, position.Column);

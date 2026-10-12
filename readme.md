@@ -80,12 +80,30 @@ The corresponding GDScript class uses `static var Count` and `static func getCou
 
 ## Unsupported language features
 
+### Untyped dictionaries
+
+`gd2cs` rejects untyped `Dictionary` declarations (including `Array[Dictionary]`), anonymous dictionary literals, and non-generic C# `Godot.Collections.Dictionary`. Specify both key and value types instead:
+
+```gdscript
+var counts : Dictionary[String, int] = {"first": 1}
+```
+
+Use `Dictionary[String, Variant]` for mixed values, or prefer a class with explicitly typed members when each field has a different type. GDScript supports untyped dictionaries; this restriction belongs to gd2cs. Empty typed dictionaries remain supported.
+
+For an array of dictionaries, Godot forbids nested typed collections. On declarations without an initializer, put the dictionary types in a trailing gd2cs hint:
+
+```gdscript
+var entries : Array[Dictionary] #[String, Node3D]
+```
+
+gd2cs reads this as `Array[Dictionary[String, Node3D]]` and emits C# `Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>`. Backtranslation reconstructs the hint. It works on fields and locals; Godot treats it as a comment and does not enforce the dictionary key/value types. Without the hint, `Array[Dictionary]` remains rejected. Mixed node and vector values require a `Variant` value type, not `Node3D`.
+
 ### Empty array literals
 
 `gd2cs` requires array literals to contain at least one element. Empty literals such as `var values := []` and `var values : Array[int] = []` are rejected. For an initially empty array, declare its type without an initializer:
 
 ```gdscript
-var values : Array[Dictionary]
+var values : Array[int]
 ```
 
 Nonempty literals can still use type inference, for example `var values := [1, 2]`. 

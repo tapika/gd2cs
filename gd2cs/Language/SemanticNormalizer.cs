@@ -82,11 +82,11 @@ internal sealed class SemanticNormalizer
     {
         ConstantDeclaration constant when constant.Value is DictionaryExpression => constant with
         {
-            Value = NormalizeExpression(constant.Value, scope)
+            Value = NormalizeTypedValue(constant.Type, constant.Value, scope)!
         },
         FieldDeclaration field => field with
         {
-            Initializer = field.Initializer is null ? null : NormalizeExpression(field.Initializer, scope)
+            Initializer = NormalizeTypedValue(field.Type, field.Initializer, scope)
         },
         NestedClassDeclaration nested => NormalizeNestedClass(nested),
         ConstructorDeclaration constructor => constructor with
@@ -128,6 +128,10 @@ internal sealed class SemanticNormalizer
     {
         if (value is null)
             return null;
+        // GDScript literals obtain their key/value types from an explicit declaration.
+        if (value is DictionaryExpression dictionary && type?.Kind == TypeKind.Dictionary
+            && type.TypeArguments.Count == 2)
+            value = SourceLocations.Copy(dictionary, dictionary with { Type = type });
         var isEmptyValueType = type?.Kind is TypeKind.Callable or TypeKind.StringName or TypeKind.NodePath;
         if (isEmptyValueType)
         {
@@ -223,6 +227,8 @@ internal sealed class SemanticNormalizer
             initializer = null;
         var type = statement.Type ?? ResolveType(initializer, scope);
         var typing = statement.Typing;
+        if (initializer is DictionaryExpression)
+            typing = LocalTyping.Explicit;
         if (typing == LocalTyping.Inferred && !CanGdScriptInfer(initializer))
             typing = type is null ? LocalTyping.Dynamic : LocalTyping.InferredWithExplicitGdType;
         else if (language == ScriptLanguage.GdScript &&
@@ -348,14 +354,7 @@ internal sealed class SemanticNormalizer
                     .Select(element => element with { Value = NormalizeExpression(element.Value, scope) })
                     .ToList()
             },
-            DictionaryExpression dictionary => dictionary with
-            {
-                Entries = dictionary.Entries.Select(entry => entry with
-                {
-                    Key = NormalizeExpression(entry.Key, scope),
-                    Value = NormalizeExpression(entry.Value, scope)
-                }).ToList()
-            },
+            DictionaryExpression dictionary => NormalizeDictionary(dictionary, scope),
             InvocationExpression invocation => NormalizeInvocation(invocation, scope),
             GodotGlobalFunctionExpression global => global with
             {
@@ -405,6 +404,21 @@ internal sealed class SemanticNormalizer
     }
 
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
+    // Anonymous literals cannot establish a safe dictionary schema; declarations must supply it.
+    private DictionaryExpression NormalizeDictionary(DictionaryExpression dictionary, BindingScope scope)
+    {
+        if (dictionary.Type?.Kind != TypeKind.Dictionary || dictionary.Type.TypeArguments.Count != 2)
+            throw SourceLocations.Error(dictionary, "Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.");
+        return dictionary with
+        {
+            Entries = dictionary.Entries.Select(entry => entry with
+            {
+                Key = NormalizeTypedValue(dictionary.Type.TypeArguments[0], entry.Key, scope)!,
+                Value = NormalizeTypedValue(dictionary.Type.TypeArguments[1], entry.Value, scope)!
+            }).ToList()
+        };
+    }
+
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
         var target = NormalizeExpression(invocation.Target, scope);
@@ -612,7 +626,7 @@ internal sealed class SemanticNormalizer
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
         StringOperationExpression operation => StringMappings.ResultType(operation.Operation),
-        DictionaryExpression => new TypeReference("Dictionary"),
+        DictionaryExpression dictionary => dictionary.Type,
         ArrayExpression array => new TypeReference(
             "Array",
             array.Elements.Count == 0 || ResolveType(array.Elements[0].Value, scope) is not { } elementType
