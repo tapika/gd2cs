@@ -213,7 +213,8 @@ internal sealed class SemanticNormalizer
     // The assignment target supplies the type needed to interpret an empty value safely.
     private AssignmentStatement NormalizeAssignment(AssignmentStatement statement, BindingScope scope)
     {
-        var target = NormalizeExpression(statement.Target, scope);
+        // Storing a dictionary value does not read it and therefore requires no cast.
+        var target = NormalizeExpression(statement.Target, scope, allowVariantDictionaryRead: true);
         var value = NormalizeTypedValue(ResolveType(target, scope), statement.Value, scope)!;
         return statement with { Target = target, Value = value };
     }
@@ -310,7 +311,7 @@ internal sealed class SemanticNormalizer
     }
 
     // Reconstructs the complete expression tree before applying parent-level patterns.
-    private Expression NormalizeExpression(Expression expression, BindingScope scope)
+    private Expression NormalizeExpression(Expression expression, BindingScope scope, bool allowVariantDictionaryRead = false)
     {
         var normalized = expression switch
         {
@@ -344,10 +345,8 @@ internal sealed class SemanticNormalizer
             {
                 Value = NormalizeExpression(conversion.Value, scope)
             },
-            SafeCastExpression cast => cast with
-            {
-                Value = NormalizeExpression(cast.Value, scope)
-            },
+            SafeCastExpression cast => NormalizeCast(cast.Type, cast.Value, scope),
+            VariantCastExpression cast => NormalizeCast(cast.Type, cast.Value, scope),
             ArrayExpression array => array with
             {
                 Elements = array.Elements
@@ -383,7 +382,7 @@ internal sealed class SemanticNormalizer
             InterpolatedStringExpression interpolated => NormalizeInterpolated(interpolated, scope),
             ParenthesizedExpression parenthesized => parenthesized with
             {
-                Expression = NormalizeExpression(parenthesized.Expression, scope)
+                Expression = NormalizeExpression(parenthesized.Expression, scope, allowVariantDictionaryRead)
             },
             ValueExpression value when TryNormalizeEnum(value, scope, out var constant) => constant,
             MemberAccessExpression member => NormalizeMemberAccess(member, scope),
@@ -398,12 +397,44 @@ internal sealed class SemanticNormalizer
             },
             _ => expression
         };
+        if (!allowVariantDictionaryRead && IsVariantDictionaryRead(normalized, scope))
+            throw SourceLocations.Error(expression,
+                "Variant-valued dictionary reads require an explicit cast; use 'entry.key as Node' or 'entry[\"key\"] as Type' with the appropriate concrete type.");
         return normalized is BinaryExpression binaryExpression
             ? NormalizeEmptyComparison(binaryExpression)
             : normalized;
     }
 
-    // Binds global calls and instance methods only when their receiver or implicit instance is known.
+    /* A dictionary schema types all values alike, not each individual string key. Never infer
+       a key's type from one initializer. Only a direct cast authorizes a Variant read; casts
+       around calls or compound expressions cannot hide an uncast read inside them. C# object
+       extraction first unwraps Variant, then uses as so incompatible objects still yield null.
+       Assignment targets are exempt, while their receivers and keys are validated normally. */
+    private Expression NormalizeCast(TypeReference type, Expression value, BindingScope scope)
+    {
+        if (language == ScriptLanguage.CSharp && value is InvocationExpression invocation
+            && invocation.Target is MemberAccessExpression { Member: "AsGodotObject" } extraction
+            && invocation.Arguments.Arguments.Count == 0)
+            value = extraction.Target;
+        var normalized = NormalizeExpression(value, scope, allowVariantDictionaryRead: true);
+        if (!IsVariantDictionaryRead(normalized, scope))
+            return new SafeCastExpression(type, normalized);
+        if (type.Kind is TypeKind.Variant or TypeKind.Void)
+            throw SourceLocations.Error(value, "Specify a concrete type for the dictionary value cast, not Variant or void.");
+        var isObject = type.Kind == TypeKind.GodotObject
+            || type.Kind == TypeKind.UserObject && !godotTypes.IsBuiltInValueType(type.Name);
+        return new VariantCastExpression(type, normalized, isObject);
+    }
+
+    private static bool IsVariantDictionaryRead(Expression expression, BindingScope scope)
+    {
+        if (expression is ParenthesizedExpression parenthesized)
+            return IsVariantDictionaryRead(parenthesized.Expression, scope);
+        return expression is IndexExpression index
+            && ResolveType(index.Target, scope)?.Kind == TypeKind.Dictionary
+            && ResolveType(index, scope)?.Kind == TypeKind.Variant;
+    }
+
     // Anonymous literals cannot establish a safe dictionary schema; declarations must supply it.
     private DictionaryExpression NormalizeDictionary(DictionaryExpression dictionary, BindingScope scope)
     {
@@ -419,9 +450,18 @@ internal sealed class SemanticNormalizer
         };
     }
 
+    // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
-        var target = NormalizeExpression(invocation.Target, scope);
+        Expression target;
+        // A dictionary method call is not dictionary-dot key access (size() versus .size).
+        if (invocation.Target is MemberAccessExpression calledMember
+            && ResolveType(calledMember.Target, scope)?.Kind == TypeKind.Dictionary
+            && CollectionMappings.TryInvocation(language, TypeKind.Dictionary, calledMember.Member,
+                invocation.Arguments.Arguments.Count, out _))
+            target = calledMember with { Target = NormalizeExpression(calledMember.Target, scope) };
+        else
+            target = NormalizeExpression(invocation.Target, scope);
         var arguments = NormalizeArguments(invocation.Arguments, scope);
         if (language == ScriptLanguage.GdScript &&
             target is ValueExpression typeName &&
@@ -529,6 +569,9 @@ internal sealed class SemanticNormalizer
             return constant;
         var target = NormalizeExpression(member.Target, scope);
         var receiverType = ResolveType(target, scope);
+        // Dictionary dot access is a string-key lookup, never a reflected object member.
+        if (language == ScriptLanguage.GdScript && receiverType?.Kind == TypeKind.Dictionary)
+            return SourceLocations.Copy(member, new IndexExpression(target, new ValueExpression("\"" + member.Member + "\"")));
         if (language == ScriptLanguage.CSharp &&
             receiverType is not null &&
             CollectionMappings.TryCSharpProperty(receiverType.Kind, member.Member, out var operation))
@@ -622,6 +665,7 @@ internal sealed class SemanticNormalizer
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,
         SafeCastExpression cast => cast.Type,
+        VariantCastExpression cast => cast.Type,
         ObjectCreationExpression creation => creation.Type,
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
@@ -632,7 +676,9 @@ internal sealed class SemanticNormalizer
             array.Elements.Count == 0 || ResolveType(array.Elements[0].Value, scope) is not { } elementType
                 ? new List<TypeReference>()
                 : new List<TypeReference> { elementType }),
-        IndexExpression index => ResolveType(index.Target, scope)?.TypeArguments.FirstOrDefault(),
+        IndexExpression index => ResolveType(index.Target, scope) is { } collectionType
+            ? collectionType.TypeArguments.ElementAtOrDefault(collectionType.Kind == TypeKind.Dictionary ? 1 : 0)
+            : null,
         GodotMemberAccessExpression member => member.Member.ResultType,
         GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
         CollectionOperationExpression { Operation: CollectionOperation.Count } => new TypeReference("int"),

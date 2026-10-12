@@ -40,4 +40,44 @@ public partial class DictionaryExpressions : RefCounted
 
 		};
 	}
+
+	public Node parentOf(Godot.Collections.Dictionary<string, Variant> entry)
+	{
+		var item = entry["node"].AsGodotObject() as Node;
+		if (GodotObject.IsInstanceValid(item))
+		{
+			return item.GetParent();
+		}
+		return null;
+	}
+
+	public Vector3 offsetOf(Godot.Collections.Dictionary<string, Variant> entry)
+	{
+		return entry["offset"].As<Vector3>();
+	}
+
+	public Node inlineParent(Godot.Collections.Dictionary<string, Variant> entry)
+	{
+		return (entry["node"].AsGodotObject() as Node).GetParent();
+	}
+
+	public bool valid(Godot.Collections.Dictionary<string, Variant> entry)
+	{
+		return GodotObject.IsInstanceValid(entry["node"].AsGodotObject() as Node);
+	}
+
+	public Node typedNode(Godot.Collections.Dictionary<string, Node> entry)
+	{
+		return entry["node"];
+	}
+
+	public int countOf(Godot.Collections.Dictionary<string, int> entry)
+	{
+		return entry["count"];
+	}
+
+	public void store(Godot.Collections.Dictionary<string, Variant> entry, Node node)
+	{
+		entry["node"] = node;
+	}
 }

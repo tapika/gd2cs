@@ -98,6 +98,17 @@ var entries : Array[Dictionary] #[String, Node3D]
 
 gd2cs reads this as `Array[Dictionary[String, Node3D]]` and emits C# `Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>`. Backtranslation reconstructs the hint. It works on fields and locals; Godot treats it as a comment and does not enforce the dictionary key/value types. Without the hint, `Array[Dictionary]` remains rejected. Mixed node and vector values require a `Variant` value type, not `Node3D`.
 
+### Reading Variant dictionary values
+
+Reads from `Dictionary[String, Variant]` require an explicit concrete cast, including arguments to `is_instance_valid` and method receivers. Both dictionary-dot and bracket access are recognized:
+
+```gdscript
+var item := entry.node as Node
+var offset := entry["offset"] as Vector3
+```
+
+C# uses `entry["node"].AsGodotObject() as Node` for object casts and `entry["offset"].As<Vector3>()` for value extraction. gd2cs reports the uncast read's location and suggests `as Type`; it does not guess types from dictionary keys. Dictionary writes and reads whose declared value type is already concrete do not require casts.
+
 ### Empty array literals
 
 `gd2cs` requires array literals to contain at least one element. Empty literals such as `var values := []` and `var values : Array[int] = []` are rejected. For an initially empty array, declare its type without an initializer:

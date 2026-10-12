@@ -123,6 +123,9 @@ public sealed record ConversionExpression(
 // Object casts keep the same instance on success and return null on incompatible types.
 public sealed record SafeCastExpression(TypeReference Type, Expression Value) : Expression;
 
+// Extracts a concrete dictionary value from Variant; object casts retain null-on-mismatch semantics.
+public sealed record VariantCastExpression(TypeReference Type, Expression Value, bool IsObjectCast = false) : Expression;
+
 // Represents construction while retaining whether Godot treats the type as a built-in value.
 public sealed record ObjectCreationExpression(
     TypeReference Type,

@@ -113,6 +113,46 @@ public sealed class TranspilerTests
     }
 
     [Fact]
+    public static void CheckDictionaryReads()
+    {
+        var transpiler = new Transpiler();
+        var gd = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.gd"));
+        var cs = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.cs"));
+        var dotSource = gd.Replace("entry[\"node\"]", "entry.node")
+            .Replace("entry[\"count\"]", "entry.count");
+        Assert.Equivalent(transpiler.Parse(gd, Language.ScriptLanguage.GdScript),
+            transpiler.Parse(dotSource, Language.ScriptLanguage.GdScript), strict: true);
+
+        foreach (var value in new[]
+        {
+            "entry.node", "entry[\"node\"]", "is_instance_valid(entry.node)",
+            "entry.node.get_parent()", "entry.node.get_parent() as Node",
+            "(entry[\"node\"])", "is_instance_valid(entry[\"node\"])",
+            "entry[\"node\"].get_parent()"
+        })
+            Reject(gd.Replace("var item := entry[\"node\"] as Node", "var item := " + value),
+                Language.ScriptLanguage.GdScript);
+        foreach (var value in new[]
+        {
+            "entry[\"node\"]", "entry[\"node\"].AsGodotObject()",
+            "GodotObject.IsInstanceValid(entry[\"node\"])", "entry[\"node\"].GetParent()"
+        })
+            Reject(cs.Replace("var item = entry[\"node\"].AsGodotObject() as Node", "var item = " + value),
+                Language.ScriptLanguage.CSharp);
+
+        void Reject(string source, Language.ScriptLanguage language)
+        {
+            var error = Assert.Throws<Parsing.ParseException>(() => transpiler.Parse(source, language));
+            Assert.Contains("require an explicit cast", error.Message);
+            var lines = source.ReplaceLineEndings("\n").Split('\n');
+            var line = Array.FindIndex(lines, text => text.TrimStart().StartsWith("var item", StringComparison.Ordinal));
+            Assert.Equal(line + 1, error.Line);
+            Assert.Equal(lines[line].IndexOf("entry", StringComparison.Ordinal) + 1, error.Column);
+            Assert.Contains("as Node", error.Message);
+        }
+    }
+
+    [Fact]
     public static void RejectUntypedDictionaries()
     {
         var gd = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.gd"));

@@ -31,3 +31,27 @@ func inspect():
 	var empty : Dictionary[String, int] = {
 
 	}
+
+func parentOf(entry: Dictionary[String, Variant]) -> Node:
+	var item := entry["node"] as Node
+	if is_instance_valid(item):
+		return item.get_parent()
+	return null
+
+func offsetOf(entry: Dictionary[String, Variant]) -> Vector3:
+	return entry["offset"] as Vector3
+
+func inlineParent(entry: Dictionary[String, Variant]) -> Node:
+	return (entry["node"] as Node).get_parent()
+
+func valid(entry: Dictionary[String, Variant]) -> bool:
+	return is_instance_valid(entry["node"] as Node)
+
+func typedNode(entry: Dictionary[String, Node]) -> Node:
+	return entry["node"]
+
+func countOf(entry: Dictionary[String, int]) -> int:
+	return entry["count"]
+
+func store(entry: Dictionary[String, Variant], node: Node):
+	entry["node"] = node

@@ -494,20 +494,21 @@ public sealed class GdScriptParser : IScriptParser
     // Applies member access, indexing, and calls repeatedly to the same base expression.
     private Expression ParsePostfixExpression()
     {
+        var opening = tokens.Current;
         var expression = ParsePrimaryExpression();
         while (true)
         {
             if (tokens.TryConsume(TokenKind.Dot))
             {
                 var member = tokens.Expect(TokenKind.Identifier).Text;
-                expression = new MemberAccessExpression(expression, member);
+                expression = SourceLocations.Record(new MemberAccessExpression(expression, member), opening);
                 continue;
             }
             if (tokens.TryConsume(TokenKind.OpenBracket))
             {
                 var index = ParseExpression();
                 tokens.Expect(TokenKind.CloseBracket);
-                expression = new IndexExpression(expression, index);
+                expression = SourceLocations.Record(new IndexExpression(expression, index), opening);
                 continue;
             }
             if (tokens.Current.Kind != TokenKind.OpenParenthesis)

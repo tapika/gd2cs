@@ -138,6 +138,20 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case VariantCastExpression cast:
+                EmitExpression(output, cast.Value, indent);
+                if (cast.IsObjectCast)
+                {
+                    output.Append(".AsGodotObject() as ");
+                    EmitType(output, cast.Type);
+                }
+                else
+                {
+                    output.Append(".As<");
+                    EmitType(output, cast.Type);
+                    output.Append(">()");
+                }
+                break;
             case SafeCastExpression cast:
                 EmitExpression(output, cast.Value, indent);
                 output.Append(" as ");

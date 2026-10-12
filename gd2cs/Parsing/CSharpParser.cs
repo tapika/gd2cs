@@ -544,20 +544,31 @@ public sealed class CSharpParser : IScriptParser
     // Applies member access, indexing, and calls repeatedly to the same base expression.
     private Expression ParsePostfixExpression()
     {
+        var opening = tokens.Current;
         var expression = ParsePrimaryExpression();
         while (true)
         {
             if (tokens.TryConsume(TokenKind.Dot))
             {
                 var member = tokens.Expect(TokenKind.Identifier).Text;
-                expression = new MemberAccessExpression(expression, member);
+                // Variant.As<T>() is a typed extraction rather than an ordinary generic call.
+                if (member == "As" && tokens.TryConsume(TokenKind.LessThan))
+                {
+                    var type = ParseType();
+                    tokens.Expect(TokenKind.GreaterThan);
+                    tokens.Expect(TokenKind.OpenParenthesis);
+                    tokens.Expect(TokenKind.CloseParenthesis);
+                    expression = SourceLocations.Record(new VariantCastExpression(type, expression), opening);
+                    continue;
+                }
+                expression = SourceLocations.Record(new MemberAccessExpression(expression, member), opening);
                 continue;
             }
             if (tokens.TryConsume(TokenKind.OpenBracket))
             {
                 var index = ParseExpression();
                 tokens.Expect(TokenKind.CloseBracket);
-                expression = new IndexExpression(expression, index);
+                expression = SourceLocations.Record(new IndexExpression(expression, index), opening);
                 continue;
             }
             if (tokens.Current.Kind != TokenKind.OpenParenthesis)

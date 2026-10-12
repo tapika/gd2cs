@@ -167,10 +167,12 @@ public sealed class GodotTypeCatalog
         [
             KnownGlobalFunction("GD", "Range", "range", 1, 1, "Array", "int"),
             KnownGlobalFunction("GD", "Range", "range", 2, 3, "Array", "int"),
-            KnownGlobalFunction("GD", "Load", "load", 1, 1, "Resource")
+            KnownGlobalFunction("GD", "Load", "load", 1, 1, "Resource"),
+            KnownGlobalFunction("GodotObject", "IsInstanceValid", "is_instance_valid", 1, 1, "bool")
         ],
         [
             KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void"),
+            KnownMethod("Node", "Node", "GetParent", "get_parent", 0, 0, "Node"),
             KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
             KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string")
         ]);
@@ -210,6 +212,9 @@ public sealed class GodotTypeCatalog
         }
         return false;
     }
+
+    public bool IsBuiltInValueType(string typeName) =>
+        constructors.Any(constructor => constructor.TypeName == typeName);
 
     // Resolves only exact members of a known receiver, preventing global casing guesses.
     public bool TryResolveMember(
