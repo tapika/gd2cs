@@ -235,6 +235,8 @@ public enum CollectionOperation
     RemoveValue,
     // Removes by position, unlike RemoveValue which searches for an equal element.
     RemoveAt,
+    // Finds an element's position, returning -1 when no matching value exists.
+    IndexOf,
     RemoveKey,
     ContainsValue,
     ContainsKey

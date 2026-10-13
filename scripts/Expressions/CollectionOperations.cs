@@ -15,6 +15,16 @@ public partial class CollectionOperations : RefCounted
 		{
 			return index;
 		}
+
+		public int find(int value)
+		{
+			return value;
+		}
+
+		public int IndexOf(int value)
+		{
+			return value;
+		}
 	}
 
 	public Godot.Collections.Array<int> Values = gdArray(1, 2, 3);
@@ -29,6 +39,7 @@ public partial class CollectionOperations : RefCounted
 		bool valuesEmpty = Values.Count == 0;
 		bool entriesEmpty = Entries.Count == 0;
 		bool valuesPresent = Values.Count != 0;
+		int valueIndex = Values.IndexOf(2);
 
 		var localValues = Values;
 		var selectedValue = CustomValues[0];
@@ -42,6 +53,19 @@ public partial class CollectionOperations : RefCounted
 
 		int customSize = Custom.size();
 		Custom.remove_at(0);
+		Custom.find(1);
+		Custom.IndexOf(1);
+	}
+
+	public int locate(Godot.Collections.Array<string> values, string value)
+	{
+		var first = values.IndexOf(value);
+		return values.IndexOf(value, first + 1);
+	}
+
+	public int itemIndex(CustomValue value)
+	{
+		return CustomValues.IndexOf(value);
 	}
 
 	public void removeItem(Godot.Collections.Array<CustomValue> values, int index)

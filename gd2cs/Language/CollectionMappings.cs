@@ -23,6 +23,8 @@ internal static class CollectionMappings
         new(TypeKind.Dictionary, CollectionOperation.Clear, "clear", "Clear", 0),
         new(TypeKind.Array, CollectionOperation.RemoveValue, "erase", "Remove", 1),
         new(TypeKind.Array, CollectionOperation.RemoveAt, "remove_at", "RemoveAt", 1),
+        new(TypeKind.Array, CollectionOperation.IndexOf, "find", "IndexOf", 1),
+        new(TypeKind.Array, CollectionOperation.IndexOf, "find", "IndexOf", 2),
         new(TypeKind.Dictionary, CollectionOperation.RemoveKey, "erase", "Remove", 1),
         new(TypeKind.Array, CollectionOperation.ContainsValue, "has", "Contains", 1),
         new(TypeKind.Dictionary, CollectionOperation.ContainsKey, "has", "ContainsKey", 1)

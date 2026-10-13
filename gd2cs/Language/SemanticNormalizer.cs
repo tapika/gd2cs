@@ -745,7 +745,7 @@ internal sealed class SemanticNormalizer
             : null,
         GodotMemberAccessExpression member => member.Member.ResultType,
         GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
-        CollectionOperationExpression { Operation: CollectionOperation.Count } => new TypeReference("int"),
+        CollectionOperationExpression { Operation: CollectionOperation.Count or CollectionOperation.IndexOf } => new TypeReference("int"),
         CollectionOperationExpression { Operation: CollectionOperation.IsEmpty or CollectionOperation.ContainsValue or CollectionOperation.ContainsKey } => new TypeReference("bool"),
         ParenthesizedExpression parenthesized => ResolveType(parenthesized.Expression, scope),
         _ => null
