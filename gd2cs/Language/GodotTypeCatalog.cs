@@ -85,6 +85,12 @@ public sealed class GodotTypeCatalog
     private readonly Dictionary<string, List<GlobalFunction>> cSharpGlobalFunctions;
     // Finds global-function emission metadata by declaring type and method name.
     private readonly Dictionary<string, GlobalFunction> globalFunctionsByIdentity;
+    // Qualified APIs remain separate so singleton methods never become unqualified global functions.
+    private readonly Dictionary<string, List<GlobalFunction>> gdScriptStaticMethods;
+    // Finds static overloads by exact qualified C# API name.
+    private readonly Dictionary<string, List<GlobalFunction>> cSharpStaticMethods;
+    // Stores static emission metadata under the reflected declaring type and method identity.
+    private readonly Dictionary<string, GlobalFunction> staticMethodsByIdentity;
     // Finds compatible instance overloads by receiver type and GDScript method name.
     private readonly Dictionary<string, List<InstanceMethod>> gdScriptMethods;
     // Finds compatible instance overloads by receiver type and C# method name.
@@ -96,7 +102,8 @@ public sealed class GodotTypeCatalog
         List<Constructor> constructors,
         List<Member> members,
         List<GlobalFunction> globalFunctions,
-        List<InstanceMethod> methods)
+        List<InstanceMethod> methods,
+        List<GlobalFunction>? staticMethods = null)
     {
         this.constructors = constructors;
         gdScriptMembers = new Dictionary<string, Member>(StringComparer.Ordinal);
@@ -105,6 +112,9 @@ public sealed class GodotTypeCatalog
         gdScriptGlobalFunctions = new Dictionary<string, List<GlobalFunction>>(StringComparer.Ordinal);
         cSharpGlobalFunctions = new Dictionary<string, List<GlobalFunction>>(StringComparer.Ordinal);
         globalFunctionsByIdentity = new Dictionary<string, GlobalFunction>(StringComparer.Ordinal);
+        gdScriptStaticMethods = new Dictionary<string, List<GlobalFunction>>(StringComparer.Ordinal);
+        cSharpStaticMethods = new Dictionary<string, List<GlobalFunction>>(StringComparer.Ordinal);
+        staticMethodsByIdentity = new Dictionary<string, GlobalFunction>(StringComparer.Ordinal);
         gdScriptMethods = new Dictionary<string, List<InstanceMethod>>(StringComparer.Ordinal);
         cSharpMethods = new Dictionary<string, List<InstanceMethod>>(StringComparer.Ordinal);
         methodsByIdentity = new Dictionary<string, InstanceMethod>(StringComparer.Ordinal);
@@ -119,6 +129,12 @@ public sealed class GodotTypeCatalog
             AddFunctionLookup(gdScriptGlobalFunctions, function.GdScriptName, function);
             AddFunctionLookup(cSharpGlobalFunctions, function.DeclaringType + "." + function.CSharpName, function);
             globalFunctionsByIdentity.TryAdd(MemberKey(function.DeclaringType, function.Name), function);
+        }
+        foreach (var method in staticMethods ?? new List<GlobalFunction>())
+        {
+            AddFunctionLookup(gdScriptStaticMethods, MemberKey(method.DeclaringType, method.GdScriptName), method);
+            AddFunctionLookup(cSharpStaticMethods, MemberKey(method.DeclaringType, method.CSharpName), method);
+            staticMethodsByIdentity.TryAdd(MemberKey(method.DeclaringType, method.Name), method);
         }
         foreach (var method in methods)
         {
@@ -175,6 +191,11 @@ public sealed class GodotTypeCatalog
             KnownMethod("Node", "Node", "GetParent", "get_parent", 0, 0, "Node"),
             KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
             KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string")
+        ],
+        [
+            KnownGlobalFunction("TranslationServer", "SetLocale", "set_locale", 1, 1, "void"),
+            KnownGlobalFunction("TranslationServer", "GetLocale", "get_locale", 0, 0, "string"),
+            KnownGlobalFunction("OS", "GetName", "get_name", 0, 0, "string")
         ]);
 
     // Loads constructor metadata from the Godot installation selected for this project.
@@ -298,6 +319,31 @@ public sealed class GodotTypeCatalog
             : function.DeclaringType + "." + function.CSharpName;
     }
 
+    // Lookup requires both the API owner and compatible arity; spelling alone cannot bind a call.
+    public bool TryResolveStaticMethod(string owner, string name, ScriptLanguage language, int argumentCount,
+        out GodotStaticMethodReference reference)
+    {
+        var source = language == ScriptLanguage.GdScript ? gdScriptStaticMethods : cSharpStaticMethods;
+        if (source.TryGetValue(MemberKey(owner, name), out var candidates))
+        {
+            var method = candidates.FirstOrDefault(candidate => argumentCount >= candidate.RequiredArgumentCount
+                && (candidate.HasParameterArray || argumentCount <= candidate.MaximumArgumentCount));
+            if (method is not null)
+            {
+                reference = new GodotStaticMethodReference(method.DeclaringType, method.Name, method.ResultType);
+                return true;
+            }
+        }
+        reference = null!;
+        return false;
+    }
+
+    public string StaticMethodName(GodotStaticMethodReference reference, ScriptLanguage language)
+    {
+        var method = staticMethodsByIdentity[MemberKey(reference.DeclaringType, reference.Name)];
+        return method.DeclaringType + "." + (language == ScriptLanguage.GdScript ? method.GdScriptName : method.CSharpName);
+    }
+
     // Resolves an instance method only after the semantic pass has bound its receiver type.
     public bool TryResolveMethod(
         string receiverType,
@@ -349,6 +395,7 @@ public sealed class GodotTypeCatalog
         var members = new List<Member>();
         var globalFunctions = new List<GlobalFunction>();
         var methods = new List<InstanceMethod>();
+        var staticMethods = new List<GlobalFunction>();
         var memberKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in SafeGetTypes(assembly))
         {
@@ -359,6 +406,8 @@ public sealed class GodotTypeCatalog
             IndexMethods(type, methods);
             if (type.Name is "GD" or "Mathf" or "GodotObject")
                 IndexGlobalFunctions(type, globalFunctions);
+            else
+                IndexGlobalFunctions(type, staticMethods, declaredOnly: true);
             if (!type.IsValueType)
                 continue;
 
@@ -377,7 +426,7 @@ public sealed class GodotTypeCatalog
                     hasParameterArray));
             }
         }
-        return new GodotTypeCatalog(constructors, members, globalFunctions, methods);
+        return new GodotTypeCatalog(constructors, members, globalFunctions, methods, staticMethods);
     }
 
     // Records inherited public methods under each concrete Godot receiver type.
@@ -403,10 +452,12 @@ public sealed class GodotTypeCatalog
         }
     }
 
-    // Indexes only Godot API owners whose static methods are globally visible in GDScript.
-    private static void IndexGlobalFunctions(Type type, List<GlobalFunction> functions)
+    // Shares static method metadata between global functions and explicitly qualified APIs.
+    private static void IndexGlobalFunctions(Type type, List<GlobalFunction> functions, bool declaredOnly = false)
     {
-        const BindingFlags flags = BindingFlags.Static | BindingFlags.Public;
+        var flags = BindingFlags.Static | BindingFlags.Public;
+        if (declaredOnly)
+            flags |= BindingFlags.DeclaredOnly;
         foreach (var method in type.GetMethods(flags).Where(method => !method.IsSpecialName))
         {
             var parameters = method.GetParameters();

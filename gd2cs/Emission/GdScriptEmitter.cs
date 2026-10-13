@@ -400,6 +400,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitExpression(output, invocation.Target, indent);
                 EmitArguments(output, invocation.Arguments, indent);
                 break;
+            case GodotStaticMethodExpression method:
+                output.Append(godotTypes.StaticMethodName(method.Method, ScriptLanguage.GdScript));
+                EmitArguments(output, method.Arguments, indent);
+                break;
             case GodotGlobalFunctionExpression global:
                 output.Append(godotTypes.GlobalFunctionName(global.Function, ScriptLanguage.GdScript));
                 EmitArguments(output, global.Arguments, indent);

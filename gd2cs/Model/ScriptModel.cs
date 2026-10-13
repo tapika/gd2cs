@@ -184,6 +184,12 @@ public sealed record GodotGlobalFunctionExpression(
     GodotGlobalFunctionReference Function,
     ArgumentList Arguments) : Expression;
 
+// Identifies a qualified Godot static API independently of each language's method spelling.
+public sealed record GodotStaticMethodReference(string DeclaringType, string Name, TypeReference ResultType);
+
+// Invokes a qualified static API without exposing it as an unqualified global function.
+public sealed record GodotStaticMethodExpression(GodotStaticMethodReference Method, ArgumentList Arguments) : Expression;
+
 // Identifies a reflected Godot instance method independently of its source-language name.
 public sealed record GodotMethodReference(
     string DeclaringType,

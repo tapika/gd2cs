@@ -56,11 +56,17 @@ internal sealed class SemanticNormalizer
     }
 
     // Collects declarations before rewriting any initializer or callable body.
-    private ClassDeclaration NormalizeClass(ClassDeclaration declaration)
+    private ClassDeclaration NormalizeClass(ClassDeclaration declaration, HashSet<string>? enclosingTypes = null)
     {
         var members = new Dictionary<string, TypeReference>(StringComparer.Ordinal);
         var methods = new HashSet<string>(StringComparer.Ordinal);
         var signals = new Dictionary<string, SignalDeclaration>(StringComparer.Ordinal);
+        // Only types visible in this lexical class scope may shadow a Godot API owner.
+        var userTypes = enclosingTypes is null ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(enclosingTypes, StringComparer.Ordinal);
+        userTypes.Add(declaration.Name);
+        foreach (var nested in declaration.Elements.OfType<NestedClassDeclaration>())
+            userTypes.Add(nested.Name);
         foreach (var element in declaration.Elements)
         {
             if (element is FieldDeclaration field)
@@ -73,7 +79,7 @@ internal sealed class SemanticNormalizer
                 signals.Add(signal.Name, signal);
         }
 
-        var scope = new BindingScope(members, methods, signals, declaration.BaseType);
+        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType);
         var elements = new List<SyntaxElement>();
         foreach (var element in declaration.Elements)
             elements.Add(NormalizeClassElement(element, scope));
@@ -92,7 +98,7 @@ internal sealed class SemanticNormalizer
         {
             Initializer = NormalizeTypedValue(field.Type, field.Initializer, scope)
         },
-        NestedClassDeclaration nested => NormalizeNestedClass(nested),
+        NestedClassDeclaration nested => NormalizeNestedClass(nested, scope),
         ConstructorDeclaration constructor => constructor with
         {
             Parameters = NormalizeParameters(constructor.Parameters, scope),
@@ -111,9 +117,9 @@ internal sealed class SemanticNormalizer
     };
 
     // Reuses root-class binding so nested classes receive their own member namespace.
-    private NestedClassDeclaration NormalizeNestedClass(NestedClassDeclaration nested)
+    private NestedClassDeclaration NormalizeNestedClass(NestedClassDeclaration nested, BindingScope parentScope)
     {
-        var normalized = NormalizeClass(new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements));
+        var normalized = NormalizeClass(new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements), parentScope.UserTypes);
         return nested with { Elements = normalized.Elements };
     }
 
@@ -368,6 +374,7 @@ internal sealed class SemanticNormalizer
             {
                 Arguments = NormalizeArguments(global.Arguments, scope)
             },
+            GodotStaticMethodExpression method => method with { Arguments = NormalizeArguments(method.Arguments, scope) },
             GodotMethodInvocationExpression method => method with
             {
                 Target = NormalizeExpression(method.Target, scope),
@@ -474,6 +481,15 @@ internal sealed class SemanticNormalizer
         else
             target = NormalizeExpression(invocation.Target, scope);
         var arguments = NormalizeArguments(invocation.Arguments, scope);
+        /* Singleton APIs are exposed as qualified static calls in C#. Reflection establishes
+           the owner and method identity; local/field/type shadowing is checked before lookup.
+           Do not add these APIs to the global table or blindly PascalCase member names. */
+        if (target is MemberAccessExpression { Target: ValueExpression owner } qualified
+            && scope.Resolve(owner.Text) is null && !scope.IsUserMethod(owner.Text)
+            && !scope.UserTypes.Contains(owner.Text)
+            && godotTypes.TryResolveStaticMethod(owner.Text, qualified.Member, language,
+                arguments.Arguments.Count, out var staticMethod))
+            return new GodotStaticMethodExpression(staticMethod, arguments);
         if (language == ScriptLanguage.GdScript &&
             target is ValueExpression typeName &&
             godotTypes.IsBuiltInValueConstructor(typeName.Text, arguments.Arguments.Count))
@@ -715,6 +731,7 @@ internal sealed class SemanticNormalizer
         VariantCastExpression cast => cast.Type,
         ObjectCreationExpression creation => creation.Type,
         GodotGlobalFunctionExpression global => global.Function.ResultType,
+        GodotStaticMethodExpression method => method.Method.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
         StringOperationExpression operation => StringMappings.ResultType(operation.Operation),
         DictionaryExpression dictionary => dictionary.Type,
@@ -745,16 +762,19 @@ internal sealed class SemanticNormalizer
             Dictionary<string, TypeReference> members,
             HashSet<string> methods,
             Dictionary<string, SignalDeclaration> signals,
+            HashSet<string> userTypes,
             TypeReference currentInstanceType)
         {
             this.members = members;
             this.methods = methods;
             Signals = signals;
+            UserTypes = userTypes;
             CurrentInstanceType = currentInstanceType;
         }
 
         public TypeReference CurrentInstanceType { get; }
         public Dictionary<string, SignalDeclaration> Signals { get; }
+        public HashSet<string> UserTypes { get; }
 
         // Instance methods are unavailable in static bodies and outside callable bodies.
         public bool HasCurrentInstance { get; set; }

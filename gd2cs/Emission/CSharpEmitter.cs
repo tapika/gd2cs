@@ -222,6 +222,10 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitInvocationTarget(output, invocation.Target, indent);
                 EmitArguments(output, invocation.Arguments, indent);
                 break;
+            case GodotStaticMethodExpression method:
+                output.Append(godotTypes.StaticMethodName(method.Method, ScriptLanguage.CSharp));
+                EmitArguments(output, method.Arguments, indent);
+                break;
             case GodotGlobalFunctionExpression global:
                 output.Append(godotTypes.GlobalFunctionName(global.Function, ScriptLanguage.CSharp));
                 EmitArguments(output, global.Arguments, indent);
