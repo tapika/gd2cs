@@ -126,6 +126,27 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onSelected)",
+        "Signal handler must return void and match the signal's argument count.")]
+    [InlineData(".gd", "ChoiceButton.item_selected.connect(onSelected)", "ChoiceButton.item_selected.connect(missingHandler)",
+        "Signal connection requires an unambiguous named void handler in this class or a Callable.")]
+    [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onPressed, 1)",
+        "Signal connections currently require exactly one callback and no flags.")]
+    [InlineData(".cs", "Callable.From<int>(onSelected)", "Callable.From<string>(onSelected)",
+        "Callable.From types must match the declared handler parameters.")]
+    public void RejectConnections(string extension, string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Signals/SignalConnections" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Equal(message, error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].Length - lines[line].TrimStart().Length + 1, error.Column);
+    }
+
+    [Theory]
     [InlineData(".gd", "changed.emit()", "changed.emit(1)", "Signal 'changed' requires 0 argument(s).")]
     [InlineData(".cs", "EmitSignal(SignalName.changed)", "EmitSignal(SignalName.changed, 1)", "Signal 'changed' requires 0 argument(s).")]
     [InlineData(".cs", "changedEventHandler", "changed", "Signal delegate names must end with EventHandler.")]
@@ -341,7 +362,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(23, r.Count);
+        Assert.Equal(24, r.Count);
         return r;
     }
 

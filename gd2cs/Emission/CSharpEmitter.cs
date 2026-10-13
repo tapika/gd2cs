@@ -149,6 +149,20 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case SignalConnectionExpression connection:
+                EmitExpression(output, connection.Target, indent);
+                output.Append(".Connect");
+                // C# adds a signal-name argument; the neutral argument list contains only the callback.
+                var connectionArguments = new List<Argument>
+                {
+                    new(new ValueExpression(godotTypes.SignalName(connection.Signal, ScriptLanguage.CSharp)), false)
+                };
+                connectionArguments.AddRange(connection.Arguments.Arguments);
+                EmitArguments(output, connection.Arguments with { Arguments = connectionArguments }, indent);
+                break;
+            case CallableMethodGroupExpression callable:
+                EmitMethodGroup(output, callable, indent);
+                break;
             case SignalEmissionExpression signal:
                 output.Append("EmitSignal");
                 var arguments = new List<Argument>
@@ -317,6 +331,26 @@ public sealed class CSharpEmitter : IScriptEmitter
             default:
                 throw new NotSupportedException("Unsupported language dialect.");
         }
+    }
+
+    // Explicit generic arguments let C# select Callable.From's Action overload for the declared handler.
+    private void EmitMethodGroup(StringBuilder output, CallableMethodGroupExpression callable, string indent)
+    {
+        output.Append("Callable.From");
+        if (callable.ParameterTypes.Count > 0)
+        {
+            output.Append('<');
+            for (var index = 0; index < callable.ParameterTypes.Count; index++)
+            {
+                if (index > 0)
+                    output.Append(", ");
+                EmitType(output, callable.ParameterTypes[index]);
+            }
+            output.Append('>');
+        }
+        output.Append('(');
+        EmitExpression(output, callable.Target, indent);
+        output.Append(')');
     }
 
     // Callable.From uses an Action overload for void, or a Func overload with a final result type.

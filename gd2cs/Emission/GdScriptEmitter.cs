@@ -341,6 +341,16 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case SignalConnectionExpression connection:
+                EmitExpression(output, connection.Target, indent);
+                output.Append('.');
+                output.Append(godotTypes.SignalName(connection.Signal, ScriptLanguage.GdScript));
+                output.Append(".connect");
+                EmitArguments(output, connection.Arguments, indent);
+                break;
+            case CallableMethodGroupExpression callable:
+                EmitExpression(output, callable.Target, indent);
+                break;
             case SignalEmissionExpression signal:
                 output.Append(signal.Name);
                 output.Append(".emit");

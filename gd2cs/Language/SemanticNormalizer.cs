@@ -59,7 +59,7 @@ internal sealed class SemanticNormalizer
     private ClassDeclaration NormalizeClass(ClassDeclaration declaration, HashSet<string>? enclosingTypes = null)
     {
         var members = new Dictionary<string, TypeReference>(StringComparer.Ordinal);
-        var methods = new HashSet<string>(StringComparer.Ordinal);
+        var methods = new Dictionary<string, List<MethodDeclaration>>(StringComparer.Ordinal);
         var signals = new Dictionary<string, SignalDeclaration>(StringComparer.Ordinal);
         // Only types visible in this lexical class scope may shadow a Godot API owner.
         var userTypes = enclosingTypes is null ? new HashSet<string>(StringComparer.Ordinal)
@@ -74,7 +74,11 @@ internal sealed class SemanticNormalizer
             else if (element is ConstantDeclaration constant)
                 members[constant.Name] = constant.Type;
             else if (element is MethodDeclaration method)
-                methods.Add(method.Name);
+            {
+                if (!methods.TryGetValue(method.Name, out var overloads))
+                    methods[method.Name] = overloads = new List<MethodDeclaration>();
+                overloads.Add(method);
+            }
             else if (element is SignalDeclaration signal)
                 signals.Add(signal.Name, signal);
         }
@@ -342,6 +346,7 @@ internal sealed class SemanticNormalizer
                 Target = NormalizeExpression(callable.Target, scope),
                 Arguments = NormalizeArguments(callable.Arguments, scope)
             },
+            CallableMethodGroupExpression callable => callable with { Target = NormalizeExpression(callable.Target, scope) },
             CallableNullExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope)
@@ -370,6 +375,11 @@ internal sealed class SemanticNormalizer
             DictionaryExpression dictionary => NormalizeDictionary(dictionary, scope),
             InvocationExpression invocation => NormalizeInvocation(invocation, scope),
             SignalEmissionExpression signal => signal with { Arguments = NormalizeArguments(signal.Arguments, scope) },
+            SignalConnectionExpression connection => connection with
+            {
+                Target = NormalizeExpression(connection.Target, scope),
+                Arguments = NormalizeArguments(connection.Arguments, scope)
+            },
             GodotGlobalFunctionExpression global => global with
             {
                 Arguments = NormalizeArguments(global.Arguments, scope)
@@ -469,6 +479,8 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
+        if (TryNormalizeSignalConnection(invocation, scope, out var connection))
+            return connection;
         if (TryNormalizeSignalEmission(invocation, scope, out var emission))
             return emission;
         Expression target;
@@ -603,6 +615,111 @@ internal sealed class SemanticNormalizer
         return true;
     }
 
+    /* Native events are resolved by receiver type and reflected SignalName identity, not
+       by capitalizing .connect chains. Named handlers use their own declared parameter
+       types in Callable.From, rather than the native delegate's types: Godot Variant
+       marshaling can deliver an int64 signal argument to a C# int handler. Only arity is
+       checked across that boundary. Preserve Callable/lambda callbacks directly, and
+       leave unrelated user-defined .connect methods untouched. */
+    private bool TryNormalizeSignalConnection(InvocationExpression invocation, BindingScope scope, out Expression connection)
+    {
+        connection = invocation;
+        Expression receiver;
+        string signalName;
+        string? constantOwner = null;
+        var arguments = invocation.Arguments;
+        // GDScript names the signal in the receiver chain; C# passes a SignalName constant.
+        if (language == ScriptLanguage.GdScript
+            && invocation.Target is MemberAccessExpression { Member: "connect", Target: MemberAccessExpression signal })
+        {
+            receiver = NormalizeExpression(signal.Target, scope);
+            signalName = signal.Member;
+        }
+        else if (language == ScriptLanguage.CSharp
+            && invocation.Target is MemberAccessExpression { Member: "Connect" } method
+            && arguments.Arguments.Count > 0
+            && arguments.Arguments[0].Value is MemberAccessExpression
+            {
+                Target: MemberAccessExpression { Target: ValueExpression owner, Member: "SignalName" }
+            } constant)
+        {
+            receiver = NormalizeExpression(method.Target, scope);
+            signalName = constant.Member;
+            constantOwner = owner.Text;
+            // Remove the C#-only signal-name argument, retaining the callback's source layout.
+            arguments = arguments with { Arguments = arguments.Arguments.Skip(1).ToList() };
+        }
+        else
+            return false;
+        var receiverType = ResolveType(receiver, scope);
+        // Unknown receivers and script-defined lookalikes must remain ordinary member calls.
+        if (receiverType is null || scope.UserTypes.Contains(receiverType.Name)
+            || !godotTypes.TryResolveSignal(receiverType.Name, signalName, language, out var reference))
+            return false;
+        // Inherited signals allow either the declaring class or concrete receiver as constant owner.
+        // A local or user type with that name must not be interpreted as a native SignalName class.
+        if (constantOwner is not null && (scope.Resolve(constantOwner) is not null
+            || scope.UserTypes.Contains(constantOwner)
+            || constantOwner != reference.DeclaringType && constantOwner != receiverType.Name))
+            return false;
+        if (arguments.Arguments.Count != 1)
+            throw SourceLocations.Error(invocation, "Signal connections currently require exactly one callback and no flags.");
+        var callback = arguments.Arguments[0];
+        var handler = NormalizeSignalHandler(callback.Value, reference, scope, invocation);
+        connection = new SignalConnectionExpression(receiver, reference, arguments with
+        {
+            Arguments = new List<Argument> { callback with { Value = handler } }
+        });
+        return true;
+    }
+
+    // Makes named methods into Callables while retaining already-constructed Callable expressions.
+    private Expression NormalizeSignalHandler(Expression expression, GodotSignalReference signal,
+        BindingScope scope, InvocationExpression invocation)
+    {
+        var handler = NormalizeExpression(expression, scope);
+        // Unwrap the C# factory so both dialects resolve the same underlying method reference.
+        var target = handler is CallableMethodGroupExpression group ? group.Target : handler;
+        string? name = target switch
+        {
+            // A local/parameter named like a method shadows it; explicit self/this does not.
+            ValueExpression value when scope.Resolve(value.Text) is null => value.Text,
+            MemberAccessExpression { Target: CurrentInstanceExpression } member => member.Member,
+            _ => null
+        };
+        if (name is not null && scope.FindHandler(name) is { } declaration
+            && (scope.HasCurrentInstance || declaration.IsStatic && target is ValueExpression))
+        {
+            // Use the handler's signature, not the native event delegate's numeric widths.
+            // Static bodies may bind static methods, but cannot capture an instance method.
+            var types = declaration.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
+            if (declaration.ReturnType.Kind != TypeKind.Void || types.Count != signal.ParameterTypes.Count)
+                throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count.");
+            // Explicit C# factory arguments must describe the actual handler, not guess another overload.
+            if (handler is CallableMethodGroupExpression explicitGroup && explicitGroup.ParameterTypes.Count > 0
+                && (explicitGroup.ParameterTypes.Count != types.Count
+                    || !explicitGroup.ParameterTypes.Zip(types).All(pair => SameHandlerType(pair.First, pair.Second))))
+                throw SourceLocations.Error(invocation, "Callable.From types must match the declared handler parameters.");
+            return new CallableMethodGroupExpression(target, types);
+        }
+        if (handler is LambdaExpression lambda)
+        {
+            // Lambda parameters provide a checkable signature without requiring a named method.
+            if (lambda.ReturnType.Kind != TypeKind.Void || lambda.Parameters.Parameters.Count != signal.ParameterTypes.Count)
+                throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count.");
+            return lambda;
+        }
+        // An existing Callable can have runtime-dependent arity; preserve it rather than wrapping it again.
+        if (handler is not CallableMethodGroupExpression && ResolveType(handler, scope)?.Kind == TypeKind.Callable)
+            return handler;
+        throw SourceLocations.Error(invocation, "Signal connection requires an unambiguous named void handler in this class or a Callable.");
+    }
+
+    // Independently parsed generic argument lists need structural comparison, not record/list identity.
+    private static bool SameHandlerType(TypeReference left, TypeReference right) =>
+        left.Name == right.Name && left.TypeArguments.Count == right.TypeArguments.Count
+        && left.TypeArguments.Zip(right.TypeArguments).All(pair => SameHandlerType(pair.First, pair.Second));
+
     // Extracts only the two syntactic forms that can denote a Godot global function.
     private static bool TryGetGlobalCallName(Expression target, out string name)
     {
@@ -722,6 +839,7 @@ internal sealed class SemanticNormalizer
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
+        CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
@@ -755,12 +873,12 @@ internal sealed class SemanticNormalizer
     private sealed class BindingScope
     {
         private readonly Dictionary<string, TypeReference> members;
-        private readonly HashSet<string> methods;
+        private readonly Dictionary<string, List<MethodDeclaration>> methods;
         private readonly List<Dictionary<string, TypeReference>> frames = new();
 
         public BindingScope(
             Dictionary<string, TypeReference> members,
-            HashSet<string> methods,
+            Dictionary<string, List<MethodDeclaration>> methods,
             Dictionary<string, SignalDeclaration> signals,
             HashSet<string> userTypes,
             TypeReference currentInstanceType)
@@ -779,7 +897,11 @@ internal sealed class SemanticNormalizer
         // Instance methods are unavailable in static bodies and outside callable bodies.
         public bool HasCurrentInstance { get; set; }
 
-        public bool IsUserMethod(string name) => methods.Contains(name);
+        public bool IsUserMethod(string name) => methods.ContainsKey(name);
+
+        // Overloaded names need explicit disambiguation; never choose the first handler arbitrarily.
+        public MethodDeclaration? FindHandler(string name) =>
+            methods.TryGetValue(name, out var overloads) && overloads.Count == 1 ? overloads[0] : null;
 
         public void Push() => frames.Add(new Dictionary<string, TypeReference>(StringComparer.Ordinal));
 

@@ -115,6 +115,9 @@ public sealed record CallableInvocationExpression(
     Expression Target,
     ArgumentList Arguments) : Expression;
 
+// Gives a named void handler the signature required by C# Callable.From overload resolution.
+public sealed record CallableMethodGroupExpression(Expression Target, List<TypeReference> ParameterTypes) : Expression;
+
 // Tests whether a Callable has no target independently of each language's API spelling.
 public sealed record CallableNullExpression(Expression Target) : Expression;
 
@@ -172,6 +175,12 @@ public sealed record InvocationExpression(
 
 // Emits a declared signal through Godot, rather than invoking a C# event delegate.
 public sealed record SignalEmissionExpression(string Name, ArgumentList Arguments) : Expression;
+
+// Reflected native signal identity; its declaring class may differ from the concrete receiver type.
+public sealed record GodotSignalReference(string DeclaringType, string Name, List<TypeReference> ParameterTypes);
+
+// Connects a Godot signal to a Callable; arguments retain callback line breaks in either dialect.
+public sealed record SignalConnectionExpression(Expression Target, GodotSignalReference Signal, ArgumentList Arguments) : Expression;
 
 // Identifies a reflected Godot global function without storing either language's spelling.
 public sealed record GodotGlobalFunctionReference(

@@ -72,6 +72,14 @@ public sealed class GodotTypeCatalog
         TypeReference ResultType);
 
     private readonly List<Constructor> constructors;
+    private sealed record CatalogSignal(string ReceiverType, string DeclaringType, string Name,
+        string GdScriptName, List<TypeReference> ParameterTypes);
+    // Finds native signals by concrete receiver type and GDScript spelling.
+    private readonly Dictionary<string, CatalogSignal> gdScriptSignals;
+    // Finds native signals by concrete receiver type and C# event spelling.
+    private readonly Dictionary<string, CatalogSignal> cSharpSignals;
+    // Looks up signal emission metadata by declaring class and canonical event name.
+    private readonly Dictionary<string, CatalogSignal> signalsByIdentity;
     private GodotEnumCatalog enums = GodotEnumCatalog.CreateKnownBuiltIns();
     // Finds a property or field by concrete receiver type and GDScript name.
     private readonly Dictionary<string, Member> gdScriptMembers;
@@ -103,9 +111,19 @@ public sealed class GodotTypeCatalog
         List<Member> members,
         List<GlobalFunction> globalFunctions,
         List<InstanceMethod> methods,
-        List<GlobalFunction>? staticMethods = null)
+        List<GlobalFunction>? staticMethods = null,
+        List<CatalogSignal>? signals = null)
     {
         this.constructors = constructors;
+        gdScriptSignals = new Dictionary<string, CatalogSignal>(StringComparer.Ordinal);
+        cSharpSignals = new Dictionary<string, CatalogSignal>(StringComparer.Ordinal);
+        signalsByIdentity = new Dictionary<string, CatalogSignal>(StringComparer.Ordinal);
+        foreach (var signal in signals ?? new List<CatalogSignal>())
+        {
+            gdScriptSignals.TryAdd(MemberKey(signal.ReceiverType, signal.GdScriptName), signal);
+            cSharpSignals.TryAdd(MemberKey(signal.ReceiverType, signal.Name), signal);
+            signalsByIdentity.TryAdd(MemberKey(signal.DeclaringType, signal.Name), signal);
+        }
         gdScriptMembers = new Dictionary<string, Member>(StringComparer.Ordinal);
         cSharpMembers = new Dictionary<string, Member>(StringComparer.Ordinal);
         membersByIdentity = new Dictionary<string, Member>(StringComparer.Ordinal);
@@ -196,6 +214,10 @@ public sealed class GodotTypeCatalog
             KnownGlobalFunction("TranslationServer", "SetLocale", "set_locale", 1, 1, "void"),
             KnownGlobalFunction("TranslationServer", "GetLocale", "get_locale", 0, 0, "string"),
             KnownGlobalFunction("OS", "GetName", "get_name", 0, 0, "string")
+        ],
+        [
+            new("Button", "BaseButton", "Pressed", "pressed", new List<TypeReference>()),
+            new("OptionButton", "OptionButton", "ItemSelected", "item_selected", new List<TypeReference> { new("int64") })
         ]);
 
     // Loads constructor metadata from the Godot installation selected for this project.
@@ -344,6 +366,26 @@ public sealed class GodotTypeCatalog
         return method.DeclaringType + "." + (language == ScriptLanguage.GdScript ? method.GdScriptName : method.CSharpName);
     }
 
+    // Lookup uses the concrete receiver; the returned identity retains the inherited event's declaring class.
+    public bool TryResolveSignal(string receiverType, string name, ScriptLanguage language, out GodotSignalReference reference)
+    {
+        var source = language == ScriptLanguage.GdScript ? gdScriptSignals : cSharpSignals;
+        if (source.TryGetValue(MemberKey(receiverType, name), out var signal))
+        {
+            reference = new GodotSignalReference(signal.DeclaringType, signal.Name, signal.ParameterTypes);
+            return true;
+        }
+        reference = null!;
+        return false;
+    }
+
+    // C# references the declaring class's generated SignalName constant, not an event value.
+    public string SignalName(GodotSignalReference reference, ScriptLanguage language)
+    {
+        var signal = signalsByIdentity[MemberKey(reference.DeclaringType, reference.Name)];
+        return language == ScriptLanguage.GdScript ? signal.GdScriptName : signal.DeclaringType + ".SignalName." + signal.Name;
+    }
+
     // Resolves an instance method only after the semantic pass has bound its receiver type.
     public bool TryResolveMethod(
         string receiverType,
@@ -396,6 +438,7 @@ public sealed class GodotTypeCatalog
         var globalFunctions = new List<GlobalFunction>();
         var methods = new List<InstanceMethod>();
         var staticMethods = new List<GlobalFunction>();
+        var signals = new List<CatalogSignal>();
         var memberKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in SafeGetTypes(assembly))
         {
@@ -404,6 +447,7 @@ public sealed class GodotTypeCatalog
 
             IndexMembers(type, members, memberKeys);
             IndexMethods(type, methods);
+            IndexSignals(type, signals);
             if (type.Name is "GD" or "Mathf" or "GodotObject")
                 IndexGlobalFunctions(type, globalFunctions);
             else
@@ -426,7 +470,23 @@ public sealed class GodotTypeCatalog
                     hasParameterArray));
             }
         }
-        return new GodotTypeCatalog(constructors, members, globalFunctions, methods, staticMethods);
+        return new GodotTypeCatalog(constructors, members, globalFunctions, methods, staticMethods, signals);
+    }
+
+    // SignalName confirms this is a native Godot signal, not merely an arbitrary managed event.
+    private static void IndexSignals(Type receiverType, List<CatalogSignal> signals)
+    {
+        foreach (var signal in receiverType.GetEvents(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var declaringType = signal.DeclaringType;
+            var nameField = declaringType?.GetNestedType("SignalName", BindingFlags.Public)
+                ?.GetField(signal.Name, BindingFlags.Public | BindingFlags.Static);
+            var invoke = signal.EventHandlerType?.GetMethod("Invoke");
+            if (nameField is null || invoke is null || invoke.ReturnType != typeof(void))
+                continue;
+            signals.Add(new CatalogSignal(receiverType.Name, declaringType!.Name, signal.Name,
+                ToSnakeCase(signal.Name), invoke.GetParameters().Select(parameter => ToTypeReference(parameter.ParameterType)).ToList()));
+        }
     }
 
     // Records inherited public methods under each concrete Godot receiver type.

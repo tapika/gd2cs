@@ -612,7 +612,7 @@ public sealed class CSharpParser : IScriptParser
     private Expression ParsePrimaryExpression()
     {
         if (tokens.Current.Text == "Callable" && tokens.Peek.Kind == TokenKind.Dot)
-            return ParseLambda();
+            return ParseCallableFactory();
         if (tokens.Current.Kind == TokenKind.InterpolatedString)
             return ParseInterpolatedString(tokens.Expect(TokenKind.InterpolatedString).Text);
         if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text == "float")
@@ -656,8 +656,8 @@ public sealed class CSharpParser : IScriptParser
         return SourceLocations.Record(new ValueExpression(value.Text), value);
     }
 
-    // Callable.From generic arguments supply parameter/result types for an untyped C# lambda.
-    private LambdaExpression ParseLambda()
+    // Callable.From accepts either a named method group or a lambda; both retain their signatures.
+    private Expression ParseCallableFactory()
     {
         tokens.Expect(TokenKind.Identifier, "Callable");
         tokens.Expect(TokenKind.Dot);
@@ -671,6 +671,13 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(TokenKind.GreaterThan);
         }
         tokens.Expect(TokenKind.OpenParenthesis);
+        if (tokens.Current.Kind != TokenKind.OpenParenthesis)
+        {
+            // Named method groups have no lambda parameter list or arrow after the factory opening.
+            var target = ParseExpression();
+            tokens.Expect(TokenKind.CloseParenthesis);
+            return new CallableMethodGroupExpression(target, types);
+        }
         tokens.Expect(TokenKind.OpenParenthesis);
         var parameters = new List<ParameterDeclaration>();
         var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
