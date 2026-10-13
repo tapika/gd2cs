@@ -70,6 +70,14 @@ public sealed class CSharpEmitter : IScriptEmitter
                 case FieldDeclaration field:
                     EmitField(output, field, indent);
                     break;
+                case SignalDeclaration signal:
+                    output.AppendLine(indent + "    [Signal]");
+                    output.Append(indent + "    public delegate void ");
+                    output.Append(signal.Name);
+                    output.Append("EventHandler");
+                    EmitParameters(output, signal.Parameters, indent);
+                    output.AppendLine(");");
+                    break;
                 case ConstructorDeclaration constructor:
                     output.Append(indent + "    public ");
                     output.Append(declaration.Name);
@@ -141,6 +149,15 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case SignalEmissionExpression signal:
+                output.Append("EmitSignal");
+                var arguments = new List<Argument>
+                {
+                    new(new ValueExpression("SignalName." + signal.Name), false)
+                };
+                arguments.AddRange(signal.Arguments.Arguments);
+                EmitArguments(output, signal.Arguments with { Arguments = arguments }, indent);
+                break;
             case VariantCastExpression cast:
                 EmitExpression(output, cast.Value, indent);
                 if (cast.IsObjectCast)

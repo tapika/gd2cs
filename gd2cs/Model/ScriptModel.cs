@@ -88,6 +88,9 @@ public sealed record FieldDeclaration(
     bool IsInferred,
     bool IsStatic = false) : MemberDeclaration;
 
+// Declares a Godot signal; delegate suffixes and generated C# events are dialect details.
+public sealed record SignalDeclaration(string Name, ParameterList Parameters) : MemberDeclaration;
+
 // Provides the language-neutral base for supported initializer expressions.
 public abstract record Expression;
 
@@ -166,6 +169,9 @@ public sealed record DictionaryEntry(
 public sealed record InvocationExpression(
     Expression Target,
     ArgumentList Arguments) : Expression;
+
+// Emits a declared signal through Godot, rather than invoking a C# event delegate.
+public sealed record SignalEmissionExpression(string Name, ArgumentList Arguments) : Expression;
 
 // Identifies a reflected Godot global function without storing either language's spelling.
 public sealed record GodotGlobalFunctionReference(

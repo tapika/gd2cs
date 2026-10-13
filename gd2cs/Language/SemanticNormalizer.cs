@@ -60,6 +60,7 @@ internal sealed class SemanticNormalizer
     {
         var members = new Dictionary<string, TypeReference>(StringComparer.Ordinal);
         var methods = new HashSet<string>(StringComparer.Ordinal);
+        var signals = new Dictionary<string, SignalDeclaration>(StringComparer.Ordinal);
         foreach (var element in declaration.Elements)
         {
             if (element is FieldDeclaration field)
@@ -68,9 +69,11 @@ internal sealed class SemanticNormalizer
                 members[constant.Name] = constant.Type;
             else if (element is MethodDeclaration method)
                 methods.Add(method.Name);
+            else if (element is SignalDeclaration signal)
+                signals.Add(signal.Name, signal);
         }
 
-        var scope = new BindingScope(members, methods, declaration.BaseType);
+        var scope = new BindingScope(members, methods, signals, declaration.BaseType);
         var elements = new List<SyntaxElement>();
         foreach (var element in declaration.Elements)
             elements.Add(NormalizeClassElement(element, scope));
@@ -80,6 +83,7 @@ internal sealed class SemanticNormalizer
     // Recurses only into class elements that can contain expressions or nested scopes.
     private SyntaxElement NormalizeClassElement(SyntaxElement element, BindingScope scope) => element switch
     {
+        SignalDeclaration signal => signal with { Parameters = NormalizeParameters(signal.Parameters, scope) },
         ConstantDeclaration constant when constant.Value is DictionaryExpression => constant with
         {
             Value = NormalizeTypedValue(constant.Type, constant.Value, scope)!
@@ -359,6 +363,7 @@ internal sealed class SemanticNormalizer
             },
             DictionaryExpression dictionary => NormalizeDictionary(dictionary, scope),
             InvocationExpression invocation => NormalizeInvocation(invocation, scope),
+            SignalEmissionExpression signal => signal with { Arguments = NormalizeArguments(signal.Arguments, scope) },
             GodotGlobalFunctionExpression global => global with
             {
                 Arguments = NormalizeArguments(global.Arguments, scope)
@@ -457,6 +462,8 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
+        if (TryNormalizeSignalEmission(invocation, scope, out var emission))
+            return emission;
         Expression target;
         // A dictionary method call is not dictionary-dot key access (size() versus .size).
         if (invocation.Target is MemberAccessExpression calledMember
@@ -542,6 +549,42 @@ internal sealed class SemanticNormalizer
         }
         // Unknown and user-defined receivers retain their original callable structure.
         return invocation with { Target = target, Arguments = arguments };
+    }
+
+    /* Bind signals through their class declarations, never by replacing every .emit call.
+       The source name is kept exactly, including case, because external GDScript connects
+       to that registered name. C# SignalName and EventHandler are generated API details.
+       Locals can shadow a signal and nested classes own independent signal tables. */
+    private bool TryNormalizeSignalEmission(InvocationExpression invocation, BindingScope scope, out Expression emission)
+    {
+        emission = invocation;
+        if (!scope.HasCurrentInstance)
+            return false;
+        string? name = null;
+        var arguments = invocation.Arguments;
+        if (language == ScriptLanguage.GdScript
+            && invocation.Target is MemberAccessExpression { Member: "emit" } member)
+        {
+            if (member.Target is ValueExpression value && scope.Resolve(value.Text) is null)
+                name = value.Text;
+            else if (member.Target is MemberAccessExpression { Target: CurrentInstanceExpression } explicitSignal)
+                name = explicitSignal.Member;
+        }
+        else if (language == ScriptLanguage.CSharp && !scope.IsUserMethod("EmitSignal")
+            && (invocation.Target is ValueExpression { Text: "EmitSignal" }
+                || invocation.Target is MemberAccessExpression { Target: CurrentInstanceExpression, Member: "EmitSignal" })
+            && arguments.Arguments.Count > 0
+            && arguments.Arguments[0].Value is MemberAccessExpression { Target: ValueExpression { Text: "SignalName" } } signalName)
+        {
+            name = signalName.Member;
+            arguments = arguments with { Arguments = arguments.Arguments.Skip(1).ToList() };
+        }
+        if (name is null || !scope.Signals.TryGetValue(name, out var declaration))
+            return false;
+        if (arguments.Arguments.Count != declaration.Parameters.Parameters.Count)
+            throw SourceLocations.Error(invocation, $"Signal '{name}' requires {declaration.Parameters.Parameters.Count} argument(s).");
+        emission = new SignalEmissionExpression(name, NormalizeArguments(arguments, scope));
+        return true;
     }
 
     // Extracts only the two syntactic forms that can denote a Godot global function.
@@ -701,14 +744,17 @@ internal sealed class SemanticNormalizer
         public BindingScope(
             Dictionary<string, TypeReference> members,
             HashSet<string> methods,
+            Dictionary<string, SignalDeclaration> signals,
             TypeReference currentInstanceType)
         {
             this.members = members;
             this.methods = methods;
+            Signals = signals;
             CurrentInstanceType = currentInstanceType;
         }
 
         public TypeReference CurrentInstanceType { get; }
+        public Dictionary<string, SignalDeclaration> Signals { get; }
 
         // Instance methods are unavailable in static bodies and outside callable bodies.
         public bool HasCurrentInstance { get; set; }

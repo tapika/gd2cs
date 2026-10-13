@@ -110,6 +110,16 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     EmitExpression(output, field.Initializer, memberIndent);
                     output.AppendLine();
                     break;
+                case SignalDeclaration signal:
+                    output.Append(memberIndent + "signal ");
+                    output.Append(signal.Name);
+                    if (signal.Parameters.Parameters.Count > 0)
+                    {
+                        EmitParameters(output, signal.Parameters, memberIndent);
+                        output.Append(')');
+                    }
+                    output.AppendLine();
+                    break;
                 case ConstructorDeclaration constructor:
                     output.Append(memberIndent + "func _init");
                     EmitCallable(output, constructor, memberIndent);
@@ -331,6 +341,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case SignalEmissionExpression signal:
+                output.Append(signal.Name);
+                output.Append(".emit");
+                EmitArguments(output, signal.Arguments, indent);
+                break;
             case VariantCastExpression cast:
                 EmitExpression(output, cast.Value, indent);
                 output.Append(" as ");

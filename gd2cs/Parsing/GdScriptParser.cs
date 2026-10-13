@@ -61,6 +61,13 @@ public sealed class GdScriptParser : IScriptParser
             var column = tokens.Current.Column;
             var isStatic = tokens.TryConsume(TokenKind.Identifier, "static");
             var kind = tokens.Expect(TokenKind.Identifier).Text;
+            if (kind == "signal")
+            {
+                if (isStatic)
+                    throw new ParseException("Signals cannot be static.", tokens.Current.Line, tokens.Current.Column);
+                elements.Add(ParseSignal());
+                continue;
+            }
             if (kind == "func")
             {
                 elements.Add(ParseCallable(column, isStatic));
@@ -79,6 +86,17 @@ public sealed class GdScriptParser : IScriptParser
 
     private static NestedClassDeclaration ToNested(ClassDeclaration declaration) =>
         new(declaration.Name, declaration.BaseType, declaration.Elements);
+
+    // Argumentless signals omit parentheses; typed signals reuse callable parameter parsing.
+    private SignalDeclaration ParseSignal()
+    {
+        var name = tokens.Expect(TokenKind.Identifier).Text;
+        var parameters = tokens.TryConsume(TokenKind.OpenParenthesis)
+            ? ParseParameters()
+            : new ParameterList(new List<ParameterDeclaration>(), false);
+        EndOfLine();
+        return new SignalDeclaration(name, parameters);
+    }
 
     private CallableDeclaration ParseCallable(int declarationColumn, bool isStatic = false)
     {
@@ -509,7 +527,7 @@ public sealed class GdScriptParser : IScriptParser
             else if (expression is MemberAccessExpression { Member: "new" } creation)
                 expression = new ObjectCreationExpression(new TypeReference(ExpressionName(creation.Target)), arguments);
             else
-                expression = new InvocationExpression(expression, arguments);
+                expression = SourceLocations.Record(new InvocationExpression(expression, arguments), opening);
         }
     }
 

@@ -113,6 +113,33 @@ public sealed class TranspilerTests
     }
 
     [Fact]
+    public void SignalForms()
+    {
+        var transpiler = new Transpiler();
+        var gd = File.ReadAllText(Fixture("Signals/CustomSignals.gd"));
+        var cs = File.ReadAllText(Fixture("Signals/CustomSignals.cs"));
+        Assert.Equivalent(transpiler.Parse(gd, Language.ScriptLanguage.GdScript),
+            transpiler.Parse(gd.Replace("signal changed", "signal changed()")
+                .Replace("changed.emit()", "self.changed.emit()"), Language.ScriptLanguage.GdScript), strict: true);
+        Assert.Equivalent(transpiler.Parse(cs, Language.ScriptLanguage.CSharp),
+            transpiler.Parse(cs.Replace("EmitSignal(", "this.EmitSignal("), Language.ScriptLanguage.CSharp), strict: true);
+    }
+
+    [Theory]
+    [InlineData(".gd", "changed.emit()", "changed.emit(1)", "Signal 'changed' requires 0 argument(s).")]
+    [InlineData(".cs", "EmitSignal(SignalName.changed)", "EmitSignal(SignalName.changed, 1)", "Signal 'changed' requires 0 argument(s).")]
+    [InlineData(".cs", "changedEventHandler", "changed", "Signal delegate names must end with EventHandler.")]
+    public void RejectSignals(string extension, string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Signals/CustomSignals" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Equal(message, error.Message);
+        Assert.True(error.Line > 1);
+        Assert.True(error.Column > 0);
+    }
+
+    [Fact]
     public static void CheckContainerNulls()
     {
         var cs = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.cs"));
@@ -314,7 +341,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(20, r.Count);
+        Assert.Equal(21, r.Count);
         return r;
     }
 

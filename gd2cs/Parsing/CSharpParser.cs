@@ -64,6 +64,11 @@ public sealed class CSharpParser : IScriptParser
             }
             if (ParseTrivia(elements))
                 continue;
+            if (tokens.Current.Kind == TokenKind.OpenBracket)
+            {
+                elements.Add(ParseSignal());
+                continue;
+            }
             if (tokens.Current.Kind == TokenKind.Tilde)
             {
                 tokens.Expect(TokenKind.Tilde);
@@ -119,6 +124,26 @@ public sealed class CSharpParser : IScriptParser
     private static NestedClassDeclaration ToNested(ClassDeclaration declaration) =>
         new(declaration.Name, declaration.BaseType, declaration.Elements);
 
+    // Godot registers the delegate name without EventHandler as the exact signal name.
+    private SignalDeclaration ParseSignal()
+    {
+        tokens.Expect(TokenKind.OpenBracket);
+        tokens.Expect(TokenKind.Identifier, "Signal");
+        tokens.Expect(TokenKind.CloseBracket);
+        EndOfLine(optional: true);
+        tokens.Expect(TokenKind.Identifier, "public");
+        tokens.Expect(TokenKind.Identifier, "delegate");
+        tokens.Expect(TokenKind.Identifier, "void");
+        var name = tokens.Expect(TokenKind.Identifier);
+        const string suffix = "EventHandler";
+        if (!name.Text.EndsWith(suffix, StringComparison.Ordinal) || name.Text.Length == suffix.Length)
+            throw new ParseException("Signal delegate names must end with EventHandler.", name.Line, name.Column);
+        var parameters = ParseParameters();
+        tokens.Expect(TokenKind.Semicolon);
+        EndOfLine();
+        return new SignalDeclaration(name.Text[..^suffix.Length], parameters);
+    }
+
     private MethodDeclaration ParseMethod(TypeReference returnType, string name, bool isStatic, bool isOverride)
     {
         var callable = ParseCallable();
@@ -150,6 +175,10 @@ public sealed class CSharpParser : IScriptParser
     }
 
     private ConstructorDeclaration ParseCallable()
+        => new(ParseParameters(), ParseBracedBody());
+
+    // Delegates and callable declarations use the same parameter grammar and layout.
+    private ParameterList ParseParameters()
     {
         tokens.Expect(TokenKind.OpenParenthesis);
         var parameters = new List<ParameterDeclaration>();
@@ -166,15 +195,14 @@ public sealed class CSharpParser : IScriptParser
                 {
                     var closingOnNewLine = tokens.TryConsume(TokenKind.NewLine);
                     tokens.Expect(TokenKind.CloseParenthesis);
-                    return new ConstructorDeclaration(new ParameterList(parameters, closingOnNewLine), ParseBracedBody());
+                    return new ParameterList(parameters, closingOnNewLine);
                 }
                 startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
                 if (tokens.TryConsume(TokenKind.CloseParenthesis))
                     break;
             }
         }
-        var elements = ParseBracedBody();
-        return new ConstructorDeclaration(new ParameterList(parameters, startsOnNewLine), elements);
+        return new ParameterList(parameters, startsOnNewLine);
     }
 
     // Consumes braces while delegating their ordered contents to the shared body parser.
@@ -577,7 +605,7 @@ public sealed class CSharpParser : IScriptParser
             if (tokens.Current.Kind != TokenKind.OpenParenthesis)
                 return expression;
             var arguments = ParseArguments();
-            expression = new InvocationExpression(NormalizeCallableTarget(expression, arguments), arguments);
+            expression = SourceLocations.Record(new InvocationExpression(NormalizeCallableTarget(expression, arguments), arguments), opening);
         }
     }
 
