@@ -15,6 +15,7 @@ var TextValue : String
 var Ratio := 1.5
 
 var Label := "sample"
+var ObjectValue := RefCounted.new()
 
 func scale(value: float) -> float:
     return value * Ratio
@@ -23,6 +24,7 @@ func scale(value: float) -> float:
 static var SharedCount := 4
 static var SharedLabel : String
 static var SharedValues : Array[int]
+static var SharedInstance := ScalarMembers.new()
 
 static func resetShared():
     SharedCount = 0

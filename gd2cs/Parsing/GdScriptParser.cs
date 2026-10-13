@@ -271,7 +271,7 @@ public sealed class GdScriptParser : IScriptParser
         }
     }
 
-    // Normalizes inferred scalar declarations by deriving the supported literal type.
+    // Field initializers share the expression grammar used in callable bodies, including construction.
     private MemberDeclaration ParseScalar(bool isConstant)
     {
         var name = tokens.Expect(TokenKind.Identifier).Text;
@@ -284,31 +284,12 @@ public sealed class GdScriptParser : IScriptParser
                 throw new ParseException("A constant requires a value", tokens.Current.Line, tokens.Current.Column);
             return new FieldDeclaration(name, type, null, false);
         }
-        if (tokens.Current.Kind == TokenKind.OpenBracket)
-        {
-            var array = ParseArray();
-            if (inferred)
-                type = InferArrayType(array);
-            return isConstant
-                ? new ConstantDeclaration(name, type, array, inferred)
-                : new FieldDeclaration(name, type, array, inferred);
-        }
-        if (tokens.Current.Kind == TokenKind.OpenBrace)
-        {
-            var dictionary = ParseDictionary();
-            if (inferred)
-                type = new TypeReference("Dictionary");
-            return isConstant
-                ? new ConstantDeclaration(name, type, dictionary, inferred)
-                : new FieldDeclaration(name, type, dictionary, inferred);
-        }
-        var value = tokens.Current;
-        tokens.Expect(value.Kind);
+        var value = ParseExpression();
         if (inferred)
-            type = new TypeReference(value.Kind == TokenKind.String ? "string" : value.Text is "true" or "false" ? "bool" : value.Text.Contains('.') ? "float" : "int");
+            type = InferExpressionType(value);
         return isConstant
-            ? new ConstantDeclaration(name, type, SourceLocations.Record(new ValueExpression(value.Text), value), inferred)
-            : new FieldDeclaration(name, type, SourceLocations.Record(new ValueExpression(value.Text), value), inferred);
+            ? new ConstantDeclaration(name, type, value, inferred)
+            : new FieldDeclaration(name, type, value, inferred);
     }
 
     // Infers homogeneous array declarations so indexed access can be bound to the element type.
@@ -326,9 +307,11 @@ public sealed class GdScriptParser : IScriptParser
     private static TypeReference InferExpressionType(Expression expression) => expression switch
     {
         ValueExpression value when value.Text is "true" or "false" => new TypeReference("bool"),
+        ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
         ValueExpression value when value.Text.Contains('.') => new TypeReference("float"),
-        ValueExpression value when value.Text.StartsWith('"') => new TypeReference("String"),
         ValueExpression => new TypeReference("int"),
+        UnaryExpression unary => InferExpressionType(unary.Operand),
+        ParenthesizedExpression grouped => InferExpressionType(grouped.Expression),
         ObjectCreationExpression creation => creation.Type,
         ArrayExpression array => InferArrayType(array),
         DictionaryExpression => new TypeReference("Dictionary"),

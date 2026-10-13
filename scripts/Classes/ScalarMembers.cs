@@ -18,6 +18,7 @@ public partial class ScalarMembers : RefCounted
     public float Ratio = 1.5f;
 
     public string Label = "sample";
+    public RefCounted ObjectValue = new RefCounted();
 
     public float scale(float value)
     {
@@ -28,6 +29,7 @@ public partial class ScalarMembers : RefCounted
     public static int SharedCount = 4;
     public static string SharedLabel;
     public static Godot.Collections.Array<int> SharedValues = new Godot.Collections.Array<int>();
+    public static ScalarMembers SharedInstance = new ScalarMembers();
 
     public static void resetShared()
     {

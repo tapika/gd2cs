@@ -78,6 +78,38 @@ public static int getCount()
 
 The corresponding GDScript class uses `static var Count` and `static func getCount()`, so the function-based access works in either language.
 
+For a singleton-style class, expose its shared instance through a static function too. In GDScript:
+
+```gdscript
+class_name SharedState
+extends RefCounted
+
+static var Shared := SharedState.new()
+
+static func getInstance() -> SharedState:
+    return Shared
+```
+
+The corresponding C# class contains:
+
+```csharp
+public static SharedState Shared = new SharedState();
+
+public static SharedState getInstance()
+{
+    return Shared;
+}
+```
+
+Access it from GDScript through the loaded script resource:
+
+```gdscript
+var SharedStateScript := load("res://scripts/SharedState-cs/SharedState.cs")
+var state = SharedStateScript.getInstance()
+```
+
+Use `=` to retain dynamic access to the returned C# instance's members. Call the getter instead of `.new()` to reuse the shared instance; do not access `SharedStateScript.Shared` directly. The same pattern works with the GDScript resource path and does not require a Godot Autoload.
+
 ## Unsupported language features
 
 ### Untyped dictionaries
