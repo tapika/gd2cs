@@ -10,12 +10,20 @@ public partial class SignalConnections : RefCounted
 
 	public void wire()
 	{
-		ActionButton.Connect(BaseButton.SignalName.Pressed, Callable.From(onPressed));
-		ChoiceButton.Connect(OptionButton.SignalName.ItemSelected, Callable.From<int>(onSelected));
-		ChoiceButton.Connect(OptionButton.SignalName.ItemSelected, Callable.From<int>((int index) => onSelected(index)));
-		ActionButton.Connect(BaseButton.SignalName.Pressed,
-			Callable.From(onPressed)
+		ActionButton.Pressed += onPressed;
+		ActionButton.Toggled += onToggled;
+		ChoiceButton.ItemSelected += onSelected;
+		ChoiceButton.ItemSelected += (long index_) =>
+		{
+			var index = (int)(index_);
+			onSelected(index);
+		};
+		ActionButton.Pressed += (
+			onPressed
 		);
+		ActionButton.Pressed -= onPressed;
+		ChoiceButton.ItemSelected -= onSelected;
+		ActionButton.Toggled -= onToggled;
 	}
 
 	public void onPressed()
@@ -23,19 +31,23 @@ public partial class SignalConnections : RefCounted
 		return;
 	}
 
-	public void onSelected(int index)
+	public void onToggled(bool enabled)
 	{
-		Selected = index;
+		return;
 	}
 
-	public void supplied(Callable callback)
+	public void onSelected(long index_2)
 	{
-		ActionButton.Connect(BaseButton.SignalName.Pressed, callback);
+		var index = (int)(index_2);
+		// Generated parameters must not shadow existing locals.
+		var index_ = 0;
+		Selected = index + index_;
 	}
 
 	public static void staticWire(Button button)
 	{
-		button.Connect(BaseButton.SignalName.Pressed, Callable.From(onStaticPressed));
+		button.Pressed += onStaticPressed;
+		button.Pressed -= onStaticPressed;
 	}
 
 	public static void onStaticPressed()

@@ -179,8 +179,11 @@ public sealed record SignalEmissionExpression(string Name, ArgumentList Argument
 // Reflected native signal identity; its declaring class may differ from the concrete receiver type.
 public sealed record GodotSignalReference(string DeclaringType, string Name, List<TypeReference> ParameterTypes);
 
-// Connects a Godot signal to a Callable; arguments retain callback line breaks in either dialect.
-public sealed record SignalConnectionExpression(Expression Target, GodotSignalReference Signal, ArgumentList Arguments) : Expression;
+// Adds/removes a signal handler; callback layout is independent of connect/disconnect and +=/-= syntax.
+public sealed record SignalConnectionExpression(Expression Target, GodotSignalReference Signal, ArgumentList Arguments, bool IsDisconnect = false) : Expression;
+
+// Retains an unbound C# event subscription until the receiver's signal type is resolved.
+public sealed record EventSubscriptionExpression(Expression Event, ArgumentList Arguments, bool IsDisconnect = false) : Expression;
 
 // Identifies a reflected Godot global function without storing either language's spelling.
 public sealed record GodotGlobalFunctionReference(
@@ -369,12 +372,13 @@ public sealed record ParameterList(
     List<ParameterDeclaration> Parameters,
     bool ClosingParenthesisStartsOnNewLine);
 
-// Represents one callable parameter and whether it starts on a new source line.
+// Keeps script typing/layout; optional EventType records a differing native C# event boundary type.
 public sealed record ParameterDeclaration(
     string Name,
     TypeReference Type,
     bool StartsOnNewLine = false,
-    Expression? DefaultValue = null);
+    Expression? DefaultValue = null,
+    TypeReference? EventType = null);
 
 // Provides the language-neutral base for callable-body operations.
 public abstract record Statement : SyntaxElement;

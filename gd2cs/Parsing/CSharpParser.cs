@@ -286,7 +286,29 @@ public sealed class CSharpParser : IScriptParser
                     isInferred ? LocalTyping.Inferred : LocalTyping.Explicit), statementToken));
                 continue;
             }
+            var statementStart = tokens.Current;
             var expression = ParseExpression();
+            if (tokens.Current.Kind is TokenKind.PlusEquals or TokenKind.MinusEquals)
+            {
+                var isDisconnect = tokens.TryConsume(TokenKind.MinusEquals);
+                if (!isDisconnect)
+                    tokens.Expect(TokenKind.PlusEquals);
+                // Parentheses retain the callback layout of a multiline GDScript connect call.
+                var callback = ParseExpression();
+                var startsOnNewLine = false;
+                var closesOnNewLine = false;
+                if (callback is ParenthesizedExpression grouped)
+                {
+                    startsOnNewLine = grouped.OpeningLineBreaks > 0;
+                    closesOnNewLine = grouped.ClosingLineBreaks > 0;
+                    callback = grouped.Expression;
+                }
+                tokens.Expect(TokenKind.Semicolon);
+                EndOfLine();
+                elements.Add(new ExpressionStatement(SourceLocations.Record(new EventSubscriptionExpression(
+                    expression, new ArgumentList(new List<Argument> { new(callback, startsOnNewLine) }, closesOnNewLine), isDisconnect), statementStart)));
+                continue;
+            }
             if (tokens.TryConsume(TokenKind.Equals))
             {
                 var value = ParseExpression();
@@ -429,7 +451,7 @@ public sealed class CSharpParser : IScriptParser
         }
         if (name == "Dictionary" && arguments.Count != 2)
             throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
-        return new TypeReference(name == "String" ? "string" : name, arguments);
+        return new TypeReference(name switch { "String" => "string", "long" => "int64", _ => name }, arguments);
     }
 
     // Consumes the generated gdArray helper without adding it to the script model.
@@ -615,8 +637,11 @@ public sealed class CSharpParser : IScriptParser
             return ParseCallableFactory();
         if (tokens.Current.Kind == TokenKind.InterpolatedString)
             return ParseInterpolatedString(tokens.Expect(TokenKind.InterpolatedString).Text);
-        if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text == "float")
+        if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text is "float" or "int"
+            && tokens.PeekAt(2).Kind == TokenKind.CloseParenthesis)
             return ParseConversion();
+        if (IsLambda())
+            return ParseLambda(new List<TypeReference>());
         if (tokens.TryConsume(TokenKind.OpenParenthesis))
         {
             groupingDepth++;
@@ -678,6 +703,36 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(TokenKind.CloseParenthesis);
             return new CallableMethodGroupExpression(target, types);
         }
+        var lambda = ParseLambda(types);
+        tokens.Expect(TokenKind.CloseParenthesis);
+        return lambda;
+    }
+
+    // Distinguishes a typed lambda parameter list from an ordinary grouped expression.
+    private bool IsLambda()
+    {
+        if (tokens.Current.Kind != TokenKind.OpenParenthesis)
+            return false;
+        var depth = 0;
+        for (var offset = 0; ; offset++)
+        {
+            var token = tokens.PeekAt(offset);
+            if (token.Kind == TokenKind.EndOfFile)
+                return false;
+            if (token.Kind == TokenKind.OpenParenthesis)
+                depth++;
+            if (token.Kind == TokenKind.CloseParenthesis)
+            {
+                depth--;
+                if (depth == 0)
+                    return tokens.PeekAt(offset + 1).Kind == TokenKind.LambdaArrow;
+            }
+        }
+    }
+
+    // Shared by Callable.From lambdas and raw event-handler lambdas.
+    private LambdaExpression ParseLambda(List<TypeReference> types)
+    {
         tokens.Expect(TokenKind.OpenParenthesis);
         var parameters = new List<ParameterDeclaration>();
         var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
@@ -716,7 +771,6 @@ public sealed class CSharpParser : IScriptParser
             elements = ParseBody();
             tokens.Expect(TokenKind.CloseBrace);
         }
-        tokens.Expect(TokenKind.CloseParenthesis);
         return new LambdaExpression(new ParameterList(parameters, closingOnNewLine), returnType, elements, isInline);
     }
 

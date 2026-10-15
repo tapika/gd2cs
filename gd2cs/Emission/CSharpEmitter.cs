@@ -150,15 +150,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         switch (expression)
         {
             case SignalConnectionExpression connection:
-                EmitExpression(output, connection.Target, indent);
-                output.Append(".Connect");
-                // C# adds a signal-name argument; the neutral argument list contains only the callback.
-                var connectionArguments = new List<Argument>
-                {
-                    new(new ValueExpression(godotTypes.SignalName(connection.Signal, ScriptLanguage.CSharp)), false)
-                };
-                connectionArguments.AddRange(connection.Arguments.Arguments);
-                EmitArguments(output, connection.Arguments with { Arguments = connectionArguments }, indent);
+                EmitSignalConnection(output, connection, indent);
                 break;
             case CallableMethodGroupExpression callable:
                 EmitMethodGroup(output, callable, indent);
@@ -353,14 +345,25 @@ public sealed class CSharpEmitter : IScriptEmitter
         output.Append(')');
     }
 
-    // Callable.From uses an Action overload for void, or a Func overload with a final result type.
-    private void EmitLambda(StringBuilder output, LambdaExpression lambda, string indent)
+    // Callable.From uses an Action overload for void; events need the same lambda without its factory.
+    private void EmitLambda(StringBuilder output, LambdaExpression lambda, string indent, bool asCallable = true)
     {
-        output.Append("Callable.From");
+        if (!asCallable)
+        {
+            var converted = EventParameterConversions.ForCSharp(lambda.Parameters, lambda.Elements);
+            lambda = lambda with
+            {
+                Parameters = converted.Parameters,
+                Elements = converted.Elements,
+                IsInline = lambda.IsInline && converted.Elements.Count == lambda.Elements.Count
+            };
+        }
+        if (asCallable)
+            output.Append("Callable.From");
         var types = lambda.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
         if (lambda.ReturnType.Kind != TypeKind.Void)
             types.Add(lambda.ReturnType);
-        if (types.Count > 0)
+        if (asCallable && types.Count > 0)
         {
             output.Append('<');
             for (var index = 0; index < types.Count; index++)
@@ -371,7 +374,8 @@ public sealed class CSharpEmitter : IScriptEmitter
             }
             output.Append('>');
         }
-        output.Append('(');
+        if (asCallable)
+            output.Append('(');
         EmitParameters(output, lambda.Parameters, indent);
         output.Append(") =>");
         if (lambda.IsInline)
@@ -392,7 +396,39 @@ public sealed class CSharpEmitter : IScriptEmitter
             EmitBody(output, lambda.Elements, indent + "    ");
             output.Append(indent + "}");
         }
-        output.Append(')');
+        if (asCallable)
+            output.Append(')');
+    }
+
+    // Direct subscriptions preserve method-group identity for later -= removal.
+    private void EmitSignalConnection(StringBuilder output, SignalConnectionExpression connection, string indent)
+    {
+        EmitExpression(output, connection.Target, indent);
+        output.Append('.');
+        output.Append(connection.Signal.Name);
+        output.Append(connection.IsDisconnect ? " -= " : " += ");
+        var callback = connection.Arguments.Arguments.Single();
+        var hasLayout = callback.StartsOnNewLine || connection.Arguments.ClosingParenthesisStartsOnNewLine;
+        if (hasLayout)
+            output.Append('(');
+        if (callback.StartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent + "    ");
+        }
+        if (callback.Value is CallableMethodGroupExpression method)
+            EmitExpression(output, method.Target, indent);
+        else if (callback.Value is LambdaExpression lambda)
+            EmitLambda(output, lambda, indent, asCallable: false);
+        else
+            throw new NotSupportedException("Signal events require a named method or inline lambda, not a Callable value.");
+        if (connection.Arguments.ClosingParenthesisStartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent);
+        }
+        if (hasLayout)
+            output.Append(')');
     }
 
     // Global math calls use their C# spelling; member and other call targets remain structural.
@@ -537,10 +573,11 @@ public sealed class CSharpEmitter : IScriptEmitter
 
     private void EmitCallable(StringBuilder output, CallableDeclaration callable, string indent)
     {
-        EmitParameters(output, callable.Parameters, indent);
+        var converted = EventParameterConversions.ForCSharp(callable.Parameters, callable.Elements);
+        EmitParameters(output, converted.Parameters, indent);
         output.AppendLine(")");
         output.AppendLine(indent + "    {");
-        EmitBody(output, callable.Elements, indent + "        ");
+        EmitBody(output, converted.Elements, indent + "        ");
         output.AppendLine(indent + "    }");
     }
 
@@ -728,7 +765,7 @@ public sealed class CSharpEmitter : IScriptEmitter
 
     private static void EmitType(StringBuilder output, TypeReference type)
     {
-        var name = type.Kind == TypeKind.String ? "string" : type.Name;
+        var name = type.Kind switch { TypeKind.String => "string", TypeKind.Int64 => "long", _ => type.Name };
         output.Append(type.Kind is TypeKind.Array or TypeKind.Dictionary
             ? "Godot.Collections." + name
             : name);

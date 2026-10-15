@@ -84,8 +84,27 @@ internal sealed class SemanticNormalizer
         }
 
         var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType);
+        /* Discover event-handler signatures before normalizing the final method bodies.
+           Connections may follow their handler declarations, or occur inside nested blocks.
+           A first binding pass uses normal lexical scopes to avoid matching shadowed names.
+           The second pass records native widths separately from script parameter types,
+           so both source dialects produce identical models, independent of declaration order.
+           Conflicting event signatures are rejected rather than generating identity-breaking
+           lambda adapters. Conversion locals are added only by the C# emitter. */
+        foreach (var element in declaration.Elements.Where(element => element is not NestedClassDeclaration))
+            NormalizeClassElement(element, scope);
+        var sourceElements = declaration.Elements.Select(element =>
+        {
+            if (element is not MethodDeclaration method || !scope.HandlerTypes.TryGetValue(method.Name, out var types))
+                return element;
+            var bound = EventParameterConversions.Bind(method.Parameters, method.Elements, types,
+                fold: language == ScriptLanguage.CSharp);
+            var updated = method with { Parameters = bound.Parameters, Elements = bound.Elements };
+            methods[method.Name] = new List<MethodDeclaration> { updated };
+            return (SyntaxElement)updated;
+        }).ToList();
         var elements = new List<SyntaxElement>();
-        foreach (var element in declaration.Elements)
+        foreach (var element in sourceElements)
             elements.Add(NormalizeClassElement(element, scope));
         return declaration with { Elements = elements };
     }
@@ -333,6 +352,7 @@ internal sealed class SemanticNormalizer
     {
         var normalized = expression switch
         {
+            EventSubscriptionExpression subscription => NormalizeEventSubscription(subscription, scope),
             // A lambda adds a lexical scope; captured names resolve through its enclosing frames.
             // GDScript snapshots captured locals, while C# closures share them. Reassignment of
             // captured locals is outside this translation subset; shared object mutation is valid.
@@ -616,10 +636,8 @@ internal sealed class SemanticNormalizer
     }
 
     /* Native events are resolved by receiver type and reflected SignalName identity, not
-       by capitalizing .connect chains. Named handlers use their own declared parameter
-       types in Callable.From, rather than the native delegate's types: Godot Variant
-       marshaling can deliver an int64 signal argument to a C# int handler. Only arity is
-       checked across that boundary. Preserve Callable/lambda callbacks directly, and
+       by capitalizing .connect chains. Native parameter types align handler declarations
+       before final binding. Preserve method-group identity for event unsubscription and
        leave unrelated user-defined .connect methods untouched. */
     private bool TryNormalizeSignalConnection(InvocationExpression invocation, BindingScope scope, out Expression connection)
     {
@@ -630,7 +648,8 @@ internal sealed class SemanticNormalizer
         var arguments = invocation.Arguments;
         // GDScript names the signal in the receiver chain; C# passes a SignalName constant.
         if (language == ScriptLanguage.GdScript
-            && invocation.Target is MemberAccessExpression { Member: "connect", Target: MemberAccessExpression signal })
+            && invocation.Target is MemberAccessExpression { Target: MemberAccessExpression signal } gdMethod
+            && gdMethod.Member is "connect" or "disconnect")
         {
             receiver = NormalizeExpression(signal.Target, scope);
             signalName = signal.Member;
@@ -669,9 +688,33 @@ internal sealed class SemanticNormalizer
         connection = new SignalConnectionExpression(receiver, reference, arguments with
         {
             Arguments = new List<Argument> { callback with { Value = handler } }
-        });
+        }, language == ScriptLanguage.GdScript && invocation.Target is MemberAccessExpression { Member: "disconnect" });
         return true;
     }
+
+    // Native event subscriptions reuse the same receiver-driven binding as GDScript connections.
+    private Expression NormalizeEventSubscription(EventSubscriptionExpression subscription, BindingScope scope)
+    {
+        if (subscription.Event is not MemberAccessExpression member)
+            throw SourceLocations.Error(subscription, "Event subscription requires a known Godot signal receiver.");
+        var receiver = NormalizeExpression(member.Target, scope);
+        var receiverType = ResolveType(receiver, scope);
+        if (receiverType is null || scope.UserTypes.Contains(receiverType.Name)
+            || !godotTypes.TryResolveSignal(receiverType.Name, member.Member, language, out var signal))
+            throw SourceLocations.Error(subscription, "Event subscription requires a known Godot signal receiver.");
+        var callback = subscription.Arguments.Arguments.Single();
+        var location = SourceLocations.Copy(subscription, new InvocationExpression(subscription.Event, subscription.Arguments));
+        var handler = NormalizeSignalHandler(callback.Value, signal, scope, location);
+        return new SignalConnectionExpression(receiver, signal, subscription.Arguments with
+        {
+            Arguments = new List<Argument> { callback with { Value = handler } }
+        }, subscription.IsDisconnect);
+    }
+
+    // Width differences are dialect details; unrelated types cannot be made compatible by renaming.
+    private static bool SameSignalType(TypeReference left, TypeReference right) =>
+        SameHandlerType(left, right)
+        || left.Kind is TypeKind.Int32 or TypeKind.Int64 && right.Kind is TypeKind.Int32 or TypeKind.Int64;
 
     // Makes named methods into Callables while retaining already-constructed Callable expressions.
     private Expression NormalizeSignalHandler(Expression expression, GodotSignalReference signal,
@@ -690,29 +733,48 @@ internal sealed class SemanticNormalizer
         if (name is not null && scope.FindHandler(name) is { } declaration
             && (scope.HasCurrentInstance || declaration.IsStatic && target is ValueExpression))
         {
-            // Use the handler's signature, not the native event delegate's numeric widths.
             // Static bodies may bind static methods, but cannot capture an instance method.
             var types = declaration.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
             if (declaration.ReturnType.Kind != TypeKind.Void || types.Count != signal.ParameterTypes.Count)
                 throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count.");
+            if (!types.Zip(signal.ParameterTypes).All(pair => SameSignalType(pair.First, pair.Second)))
+                throw SourceLocations.Error(invocation, "Signal handler parameter types are incompatible with the native event.");
+            // One method must satisfy every event it handles, including later disconnect calls.
+            if (scope.HandlerTypes.TryGetValue(name, out var existing)
+                && (existing.Count != signal.ParameterTypes.Count
+                    || !existing.Zip(signal.ParameterTypes).All(pair => SameHandlerType(pair.First, pair.Second))))
+                throw SourceLocations.Error(invocation, "Signal handler is used with conflicting native event signatures.");
+            scope.HandlerTypes[name] = signal.ParameterTypes;
             // Explicit C# factory arguments must describe the actual handler, not guess another overload.
             if (handler is CallableMethodGroupExpression explicitGroup && explicitGroup.ParameterTypes.Count > 0
                 && (explicitGroup.ParameterTypes.Count != types.Count
-                    || !explicitGroup.ParameterTypes.Zip(types).All(pair => SameHandlerType(pair.First, pair.Second))))
+                    || !explicitGroup.ParameterTypes.Zip(types).All(pair => SameSignalType(pair.First, pair.Second))))
                 throw SourceLocations.Error(invocation, "Callable.From types must match the declared handler parameters.");
-            return new CallableMethodGroupExpression(target, types);
+            return new CallableMethodGroupExpression(target, signal.ParameterTypes);
         }
         if (handler is LambdaExpression lambda)
         {
             // Lambda parameters provide a checkable signature without requiring a named method.
             if (lambda.ReturnType.Kind != TypeKind.Void || lambda.Parameters.Parameters.Count != signal.ParameterTypes.Count)
                 throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count.");
-            return lambda;
+            if (!lambda.Parameters.Parameters.Select(parameter => parameter.Type).Zip(signal.ParameterTypes)
+                .All(pair => SameSignalType(pair.First, pair.Second)))
+                throw SourceLocations.Error(invocation, "Signal handler parameter types are incompatible with the native event.");
+            var bound = EventParameterConversions.Bind(lambda.Parameters, lambda.Elements, signal.ParameterTypes,
+                fold: language == ScriptLanguage.CSharp);
+            // A generated block wrapping one inline expression returns to the original script lambda.
+            return lambda with
+            {
+                Parameters = bound.Parameters,
+                Elements = NormalizeCallable(bound.Parameters, bound.Elements, scope),
+                IsInline = lambda.IsInline || bound.Folded && bound.Elements.Count == 1
+                    && bound.Elements[0] is ExpressionStatement or ReturnStatement
+            };
         }
-        // An existing Callable can have runtime-dependent arity; preserve it rather than wrapping it again.
+        // A runtime Callable is not a CLR delegate; supporting it would require an adapter.
         if (handler is not CallableMethodGroupExpression && ResolveType(handler, scope)?.Kind == TypeKind.Callable)
-            return handler;
-        throw SourceLocations.Error(invocation, "Signal connection requires an unambiguous named void handler in this class or a Callable.");
+            throw SourceLocations.Error(invocation, "Signal events require a named method or inline lambda, not a Callable value.");
+        throw SourceLocations.Error(invocation, "Signal connection requires an unambiguous named void handler in this class or an inline lambda.");
     }
 
     // Independently parsed generic argument lists need structural comparison, not record/list identity.
@@ -892,6 +954,8 @@ internal sealed class SemanticNormalizer
 
         public TypeReference CurrentInstanceType { get; }
         public Dictionary<string, SignalDeclaration> Signals { get; }
+        // Shared across callable scopes within one class; records the required native handler signatures.
+        public Dictionary<string, List<TypeReference>> HandlerTypes { get; } = new(StringComparer.Ordinal);
         public HashSet<string> UserTypes { get; }
 
         // Instance methods are unavailable in static bodies and outside callable bodies.

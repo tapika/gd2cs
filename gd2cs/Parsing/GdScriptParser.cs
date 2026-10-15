@@ -515,13 +515,13 @@ public sealed class GdScriptParser : IScriptParser
             if (tokens.Current.Kind != TokenKind.OpenParenthesis)
                 return expression;
             var arguments = ParseArguments();
-            var isFloatConversion = expression is ValueExpression valueExpression
-                && valueExpression.Text == "float"
+            var isScalarConversion = expression is ValueExpression valueExpression
+                && valueExpression.Text is "float" or "int"
                 && arguments.Arguments.Count == 1;
-            if (isFloatConversion)
+            if (isScalarConversion)
             {
                 expression = new ConversionExpression(
-                    new TypeReference("float"),
+                    new TypeReference(((ValueExpression)expression).Text),
                     arguments.Arguments[0].Value);
             }
             else if (expression is MemberAccessExpression { Member: "new" } creation)

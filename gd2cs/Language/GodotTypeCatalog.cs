@@ -217,6 +217,7 @@ public sealed class GodotTypeCatalog
         ],
         [
             new("Button", "BaseButton", "Pressed", "pressed", new List<TypeReference>()),
+            new("Button", "BaseButton", "Toggled", "toggled", new List<TypeReference> { new("bool") }),
             new("OptionButton", "OptionButton", "ItemSelected", "item_selected", new List<TypeReference> { new("int64") })
         ]);
 

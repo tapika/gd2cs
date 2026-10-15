@@ -153,6 +153,12 @@ Arrays and dictionaries declared without initializers start empty in GDScript. g
 
 Nonempty literals can still use type inference, for example `var values := [1, 2]`.
 
+### Native signal connections
+
+GDScript `button.pressed.connect(onPressed)` / `.disconnect(onPressed)` translate to C# `button.Pressed += onPressed` / `-= onPressed`. Named handlers and inline lambdas are supported; no adapter delegates are generated. For differing integer widths, C# keeps the native signature and adds a conversion local, e.g. `long index_` followed by `var index = (int)(index_);`. Matching parameters stay unchanged. Generated names avoid collisions (`index_2`, etc.). Backtranslation removes these generated locals and restores the original GDScript parameter names/types; ordinary locals and casts remain intact. Unrelated parameter types and conflicting event signatures are rejected. Narrowing casts follow the C# project's overflow-checking policy.
+
+Legacy C# `Connect(..., Callable.From(handler))` is accepted but emitted as event syntax. Runtime `Callable` callback values are not supported for native event connections. Inline lambdas have normal C# delegate-identity limitations; use a named handler when later disconnecting.
+
 ### C# double
 
 `gd2cs` maps C# `float` to GDScript `float` in both directions. C# `double` (`System.Double`) is unsupported and produces a translation error. This is a tooling choice: GDScript `Vector2/3` uses 32-bit `float`, and even thus some properties like `SpinBox.MinValue` use `double`, but mixing two different type can produce precision errors.

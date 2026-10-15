@@ -220,7 +220,13 @@ public sealed class GdScriptEmitter : IScriptEmitter
 
     private static void EmitType(StringBuilder output, TypeReference type, bool omitNestedDictionaryTypes = false)
     {
-        output.Append(type.Kind == TypeKind.String ? "String" : type.Name);
+        output.Append(type.Kind switch
+        {
+            TypeKind.String => "String",
+            TypeKind.Int64 => "int",
+            TypeKind.Float64 => "float",
+            _ => type.Name
+        });
         if (type.TypeArguments.Count == 0)
             return;
         output.Append('[');
@@ -345,7 +351,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitExpression(output, connection.Target, indent);
                 output.Append('.');
                 output.Append(godotTypes.SignalName(connection.Signal, ScriptLanguage.GdScript));
-                output.Append(".connect");
+                output.Append(connection.IsDisconnect ? ".disconnect" : ".connect");
                 EmitArguments(output, connection.Arguments, indent);
                 break;
             case CallableMethodGroupExpression callable:

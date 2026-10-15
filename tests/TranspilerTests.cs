@@ -129,11 +129,19 @@ public sealed class TranspilerTests
     [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onSelected)",
         "Signal handler must return void and match the signal's argument count.")]
     [InlineData(".gd", "ChoiceButton.item_selected.connect(onSelected)", "ChoiceButton.item_selected.connect(missingHandler)",
-        "Signal connection requires an unambiguous named void handler in this class or a Callable.")]
+        "Signal connection requires an unambiguous named void handler in this class or an inline lambda.")]
     [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onPressed, 1)",
         "Signal connections currently require exactly one callback and no flags.")]
-    [InlineData(".cs", "Callable.From<int>(onSelected)", "Callable.From<string>(onSelected)",
-        "Callable.From types must match the declared handler parameters.")]
+    [InlineData(".cs", "ActionButton.Pressed += onPressed", "ActionButton.Pressed += onSelected",
+        "Signal handler must return void and match the signal's argument count.")]
+    [InlineData(".cs", "ChoiceButton.ItemSelected += onSelected", "ChoiceButton.ItemSelected += missingHandler",
+        "Signal connection requires an unambiguous named void handler in this class or an inline lambda.")]
+    [InlineData(".gd", "ChoiceButton.item_selected.connect(func (index: int): onSelected(index))",
+        "ChoiceButton.item_selected.connect(func (index: String): onSelected(index))",
+        "Signal handler parameter types are incompatible with the native event.")]
+    [InlineData(".cs", "ChoiceButton.ItemSelected += (long index_)",
+        "ChoiceButton.ItemSelected += (string index_)",
+        "Signal handler parameter types are incompatible with the native event.")]
     public void RejectConnections(string extension, string original, string replacement, string message)
     {
         var source = File.ReadAllText(Fixture("Signals/SignalConnections" + extension)).Replace(original, replacement);
@@ -144,6 +152,24 @@ public sealed class TranspilerTests
         var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
         Assert.Equal(line + 1, error.Line);
         Assert.Equal(lines[line].Length - lines[line].TrimStart().Length + 1, error.Column);
+    }
+
+    [Fact]
+    public void EventWidths()
+    {
+        var transpiler = new Transpiler();
+        var cs = File.ReadAllText(Fixture("Signals/SignalConnections.cs")).ReplaceLineEndings("\n");
+        var gd = File.ReadAllText(Fixture("Signals/SignalConnections.gd")).ReplaceLineEndings("\n");
+        // Both dialects obtain the native signature even if the source uses C# int parameters.
+        var narrow = cs.Replace("long index_2", "int index")
+            .Replace("\t\tvar index = (int)(index_2);\n", string.Empty);
+        Assert.Equivalent(transpiler.Parse(cs, Language.ScriptLanguage.CSharp),
+            transpiler.Parse(narrow, Language.ScriptLanguage.CSharp), strict: true);
+        Assert.Equal(gd, transpiler.Transpile(narrow, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
+        Assert.Equal(cs, transpiler.Transpile(gd, Language.ScriptLanguage.GdScript, Language.ScriptLanguage.CSharp));
+        var legacy = narrow.Replace("ChoiceButton.ItemSelected += onSelected;",
+            "ChoiceButton.Connect(OptionButton.SignalName.ItemSelected, Callable.From<int>(onSelected));");
+        Assert.Equal(gd, transpiler.Transpile(legacy, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
     }
 
     [Theory]
