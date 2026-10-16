@@ -54,3 +54,6 @@ func removeItem(values: Array[CustomValue], index: int):
 
 func contains(values: Array[int], entries: Dictionary[String, int]) -> bool:
 	return values.has(1) and entries.has("first")
+
+func literalContains(value: int) -> bool:
+	return [1, 2, 3].has(value)

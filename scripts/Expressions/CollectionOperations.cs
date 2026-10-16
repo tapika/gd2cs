@@ -78,6 +78,11 @@ public partial class CollectionOperations : RefCounted
 		return values.Contains(1) && entries.ContainsKey("first");
 	}
 
+	public bool literalContains(int value)
+	{
+		return gdArray(1, 2, 3).Contains(value);
+	}
+
 	private static Godot.Collections.Array<T> gdArray<[MustBeVariant] T>(params T[] values)
 	{
 		var result = new Godot.Collections.Array<T>();

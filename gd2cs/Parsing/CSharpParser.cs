@@ -162,9 +162,7 @@ public sealed class CSharpParser : IScriptParser
             return new FieldDeclaration(name, type, null, false);
         }
         tokens.Expect(TokenKind.Equals);
-        Expression value = tokens.Current.Text == "gdArray"
-            ? ParseArray()
-            : ParseExpression();
+        var value = ParseExpression();
         tokens.Expect(TokenKind.Semicolon);
         EndOfLine();
         // Initialized fields can use GDScript's inferred declaration syntax, including arrays.
@@ -272,9 +270,7 @@ public sealed class CSharpParser : IScriptParser
                 var hasInitializer = tokens.TryConsume(TokenKind.Equals);
                 if (isInferred && !hasInitializer)
                     throw new ParseException("An inferred local requires a value", tokens.Current.Line, tokens.Current.Column);
-                var initializer = hasInitializer
-                    ? tokens.Current.Text == "gdArray" ? ParseArray() : ParseExpression()
-                    : null;
+                var initializer = hasInitializer ? ParseExpression() : null;
                 if (!isInferred && initializer is not null && IsGeneratedDefault(type!, initializer))
                     initializer = null;
                 tokens.Expect(TokenKind.Semicolon);
@@ -621,6 +617,9 @@ public sealed class CSharpParser : IScriptParser
 
     private Expression ParsePrimaryExpression()
     {
+        // Array helpers are expressions too, allowing chained calls such as gdArray(...).Contains(...).
+        if (tokens.Current.Text == "gdArray" && tokens.Peek.Kind == TokenKind.OpenParenthesis)
+            return ParseArray();
         if (tokens.Current.Text == "Callable" && tokens.Peek.Kind == TokenKind.Dot)
             return ParseCallableFactory();
         if (tokens.Current.Kind == TokenKind.InterpolatedString)
