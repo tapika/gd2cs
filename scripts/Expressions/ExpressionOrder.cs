@@ -37,6 +37,58 @@ public partial class ExpressionOrder : RefCounted
 		return 0;
 	}
 
+	public void bitwise(int flags, bool enabled)
+	{
+		var combined = flags | 2 ^ 4 & 1 + 2 * 3;
+		var inverted = ~flags;
+		var selected = combined & 7;
+		var grouped = flags & (1 | 2);
+		var ordered = (flags & 1) + 2;
+		var compared = flags == (1 | 2);
+		var present = (flags & 64) != 0;
+		if ((flags & 1) != 0)
+		{
+			DefaultOrder = selected;
+		}
+		if (enabled && (flags & 2) != 0 || (flags & 4) != 0)
+		{
+			DefaultOrder = combined;
+		}
+		if ((flags & 8) == 0)
+		{
+			DefaultOrder = inverted;
+		}
+		while ((flags & 16) != 0)
+		{
+			break;
+		}
+		if ((~flags) != 0)
+		{
+			DefaultOrder = ordered;
+		}
+		var chosen = (flags & 32) != 0 ? 1 : 0;
+	}
+
+	public int maskValue(int flags)
+	{
+		return flags & 3;
+	}
+
+	public bool maskPresent(int flags)
+	{
+		return (flags & 1) != 0;
+	}
+
+	public bool compareMask(int flags, int expected)
+	{
+		return (flags & 3) == expected;
+	}
+
+	public bool enumMask(Control.SizeFlags flags)
+	{
+		return (flags & Control.SizeFlags.ExpandFill) != 0;
+	}
+
 	public int multiline(int value)
 	{
 		var total = (

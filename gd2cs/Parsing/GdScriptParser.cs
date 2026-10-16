@@ -1,4 +1,5 @@
 using System.Text;
+using gd2cs.Language;
 using gd2cs.Model;
 
 namespace gd2cs.Parsing;
@@ -456,7 +457,7 @@ public sealed class GdScriptParser : IScriptParser
                 && OperatorPrecedence(tokens.PeekAfterNewLines()) >= minimumPrecedence
                     ? tokens.ConsumeLineBreaks() : 0;
             // GDScript as casts bind below binary operators.
-            if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "is"))
+            if (minimumPrecedence <= 9 && tokens.TryConsume(TokenKind.Identifier, "is"))
             {
                 var isNegated = tokens.TryConsume(TokenKind.Identifier, "not");
                 left = new TypeCheckExpression(left, ParseType(), isNegated);
@@ -491,7 +492,9 @@ public sealed class GdScriptParser : IScriptParser
     private Expression ParseUnaryExpression()
     {
         if (tokens.TryConsume(TokenKind.Identifier, "not"))
-            return new UnaryExpression("not", ParseUnaryExpression());
+            return new UnaryExpression("not", ParseExpression(2));
+        if (tokens.TryConsume(TokenKind.Tilde))
+            return new UnaryExpression("~", ParseUnaryExpression());
         if (tokens.TryConsume(TokenKind.Minus))
             return new UnaryExpression("-", ParseUnaryExpression());
         if (tokens.TryConsume(TokenKind.Plus))
@@ -681,16 +684,8 @@ public sealed class GdScriptParser : IScriptParser
         }
     }
 
-    private static int OperatorPrecedence(Token token) => token switch
-    {
-        { Kind: TokenKind.Identifier, Text: "or" } => 0,
-        { Kind: TokenKind.Identifier, Text: "and" } => 1,
-        { Kind: TokenKind.EqualEqual or TokenKind.BangEqual } => 2,
-        { Kind: TokenKind.LessThan or TokenKind.LessThanOrEqual or TokenKind.GreaterThan or TokenKind.GreaterThanOrEqual } => 3,
-        { Kind: TokenKind.Plus or TokenKind.Minus } => 4,
-        { Kind: TokenKind.Star or TokenKind.Slash or TokenKind.Percent } => 5,
-        _ => -1
-    };
+    private static int OperatorPrecedence(Token token) =>
+        ExpressionOperators.Precedence(token.Text, ScriptLanguage.GdScript);
 
     private bool ParseTrivia(List<SyntaxElement> elements)
     {

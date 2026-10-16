@@ -154,6 +154,9 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case BitmaskConditionExpression condition:
+                EmitBitmaskTest(output, condition, indent, negated: false);
+                break;
             case TypeCheckExpression test:
                 EmitExpression(output, test.Value, indent);
                 output.Append(test.IsNegated ? " is not " : " is ");
@@ -277,7 +280,7 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitCollectionOperation(output, collection, indent);
                 break;
             case BinaryExpression binary:
-                EmitExpression(output, binary.Left, indent);
+                EmitOperand(output, binary.Left, binary.Operator, false, indent);
                 if (binary.LineBreaksBeforeOperator > 0)
                     EmitLineBreaks(output, binary.LineBreaksBeforeOperator, indent);
                 else
@@ -287,9 +290,14 @@ public sealed class CSharpEmitter : IScriptEmitter
                     EmitLineBreaks(output, binary.LineBreaksAfterOperator, indent);
                 else
                     output.Append(' ');
-                EmitExpression(output, binary.Right, indent);
+                EmitOperand(output, binary.Right, binary.Operator, true, indent);
                 break;
             case UnaryExpression unary:
+                if (unary is { Operator: "not", Operand: BitmaskConditionExpression mask })
+                {
+                    EmitBitmaskTest(output, mask, indent, negated: true);
+                    break;
+                }
                 if (unary is { Operator: "not", Operand: CallableNullExpression callableNull })
                 {
                     EmitExpression(output, callableNull.Target, indent);
@@ -419,6 +427,29 @@ public sealed class CSharpEmitter : IScriptEmitter
             output.Append(indent + "}");
         }
         if (asCallable)
+            output.Append(')');
+    }
+
+    // Enum flags and integer masks both support comparison with the zero literal.
+    private void EmitBitmaskTest(StringBuilder output, BitmaskConditionExpression condition, string indent, bool negated)
+    {
+        var grouped = condition.Value is ParenthesizedExpression;
+        if (!grouped)
+            output.Append('(');
+        EmitExpression(output, condition.Value, indent);
+        if (!grouped)
+            output.Append(')');
+        output.Append(negated ? " == 0" : " != 0");
+    }
+
+    // Parentheses follow the target language's precedence, never the source spelling.
+    private void EmitOperand(StringBuilder output, Expression child, string operation, bool right, string indent)
+    {
+        var grouped = ExpressionOperators.NeedsParentheses(child, operation, right, ScriptLanguage.CSharp);
+        if (grouped)
+            output.Append('(');
+        EmitExpression(output, child, indent);
+        if (grouped)
             output.Append(')');
     }
 

@@ -523,12 +523,12 @@ public sealed class CSharpParser : IScriptParser
                 && OperatorPrecedence(tokens.PeekAfterNewLines()) >= minimumPrecedence
                     ? tokens.ConsumeLineBreaks() : 0;
             // C# places as casts at the same precedence as relational operators.
-            if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "as"))
+            if (minimumPrecedence <= 6 && tokens.TryConsume(TokenKind.Identifier, "as"))
             {
                 left = new SafeCastExpression(ParseType(), left);
                 continue;
             }
-            if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "is"))
+            if (minimumPrecedence <= 6 && tokens.TryConsume(TokenKind.Identifier, "is"))
             {
                 var isNotNull = tokens.TryConsume(TokenKind.Identifier, "not");
                 if (tokens.Current.Text != "null")
@@ -571,6 +571,8 @@ public sealed class CSharpParser : IScriptParser
     {
         if (tokens.TryConsume(TokenKind.Bang))
             return new UnaryExpression("not", ParseUnaryExpression());
+        if (tokens.TryConsume(TokenKind.Tilde))
+            return new UnaryExpression("~", ParseUnaryExpression());
         if (tokens.TryConsume(TokenKind.Minus))
             return new UnaryExpression("-", ParseUnaryExpression());
         if (tokens.TryConsume(TokenKind.Plus))
@@ -880,16 +882,8 @@ public sealed class CSharpParser : IScriptParser
         }
     }
 
-    private static int OperatorPrecedence(Token token) => token.Kind switch
-    {
-        TokenKind.PipePipe => 0,
-        TokenKind.AmpersandAmpersand => 1,
-        TokenKind.EqualEqual or TokenKind.BangEqual => 2,
-        TokenKind.LessThan or TokenKind.LessThanOrEqual or TokenKind.GreaterThan or TokenKind.GreaterThanOrEqual => 3,
-        TokenKind.Plus or TokenKind.Minus => 4,
-        TokenKind.Star or TokenKind.Slash or TokenKind.Percent => 5,
-        _ => -1
-    };
+    private static int OperatorPrecedence(Token token) =>
+        ExpressionOperators.Precedence(NormalizeOperator(token.Text), ScriptLanguage.CSharp);
 
     private static string NormalizeOperator(string value) => value switch
     {

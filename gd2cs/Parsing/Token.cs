@@ -40,6 +40,9 @@ internal enum TokenKind
     GreaterThan,
     GreaterThanOrEqual,
     AmpersandAmpersand,
+    Ampersand,
+    Pipe,
+    Caret,
     PipePipe,
     EndOfFile
 }

@@ -126,6 +126,10 @@ public sealed record ConversionExpression(
     TypeReference Type,
     Expression Value) : Expression;
 
+// Converts a numeric bitmask result to bool without applying numeric truthiness to arbitrary values.
+// GDScript conditions can use the value directly; C# requires an explicit comparison with zero.
+public sealed record BitmaskConditionExpression(Expression Value) : Expression;
+
 // Object casts keep the same instance on success and return null on incompatible types.
 public sealed record SafeCastExpression(TypeReference Type, Expression Value) : Expression;
 

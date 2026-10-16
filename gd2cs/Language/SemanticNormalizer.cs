@@ -130,7 +130,7 @@ internal sealed class SemanticNormalizer
         MethodDeclaration method => method with
         {
             Parameters = NormalizeParameters(method.Parameters, scope),
-            Elements = NormalizeCallable(method.Parameters, method.Elements, scope, method.IsStatic)
+            Elements = NormalizeCallable(method.Parameters, method.Elements, scope, method.IsStatic, method.ReturnType)
         },
         DestructorDeclaration destructor => destructor with
         {
@@ -180,7 +180,7 @@ internal sealed class SemanticNormalizer
                 invocation.Arguments.Arguments.Count == 0)
                 return new TypeDefaultExpression(type!);
         }
-        return NormalizeExpression(value, scope);
+        return type?.Kind == TypeKind.Bool ? NormalizeBoolean(value, scope) : NormalizeExpression(value, scope);
     }
 
     // Parameters and locals live only for the duration of their owning callable.
@@ -188,9 +188,12 @@ internal sealed class SemanticNormalizer
         ParameterList parameters,
         List<SyntaxElement> elements,
         BindingScope scope,
-        bool isStatic = false)
+        bool isStatic = false,
+        TypeReference? returnType = null)
     {
         var hadCurrentInstance = scope.HasCurrentInstance;
+        var previousReturnType = scope.ReturnType;
+        scope.ReturnType = returnType;
         scope.HasCurrentInstance = !isStatic;
         scope.Push();
         try
@@ -203,6 +206,7 @@ internal sealed class SemanticNormalizer
         {
             scope.Pop();
             scope.HasCurrentInstance = hadCurrentInstance;
+            scope.ReturnType = previousReturnType;
         }
     }
 
@@ -230,7 +234,7 @@ internal sealed class SemanticNormalizer
         AssignmentStatement statement => NormalizeAssignment(statement, scope),
         ReturnStatement statement => statement with
         {
-            Value = statement.Value is null ? null : NormalizeExpression(statement.Value, scope)
+            Value = NormalizeTypedValue(scope.ReturnType, statement.Value, scope)
         },
         ExpressionStatement statement => statement with
         {
@@ -336,7 +340,7 @@ internal sealed class SemanticNormalizer
         {
             foreach (var branch in statement.Branches)
             {
-                var condition = NormalizeExpression(branch.Condition, scope);
+                var condition = NormalizeBoolean(branch.Condition, scope);
                 var body = UnderCondition(condition, true, scope, () => NormalizeNestedBody(branch.Elements, scope));
                 branches.Add(branch with { Condition = condition, Elements = body });
                 // Later elif/else branches execute only after every earlier condition failed.
@@ -356,7 +360,7 @@ internal sealed class SemanticNormalizer
 
     private WhileStatement NormalizeWhile(WhileStatement statement, BindingScope scope)
     {
-        var condition = NormalizeExpression(statement.Condition, scope);
+        var condition = NormalizeBoolean(statement.Condition, scope);
         return statement with
         {
             Condition = condition,
@@ -423,16 +427,39 @@ internal sealed class SemanticNormalizer
 
     private Expression NormalizeBinary(BinaryExpression expression, BindingScope scope)
     {
-        var left = NormalizeExpression(expression.Left, scope);
+        var logical = expression.Operator is "and" or "or";
+        var left = logical ? NormalizeBoolean(expression.Left, scope) : NormalizeExpression(expression.Left, scope);
         var right = expression.Operator is "and" or "or"
-            ? UnderCondition(left, expression.Operator == "and", scope, () => NormalizeExpression(expression.Right, scope))
+            ? UnderCondition(left, expression.Operator == "and", scope, () => NormalizeBoolean(expression.Right, scope))
             : NormalizeExpression(expression.Right, scope);
+        left = ExpressionOperators.NormalizeOperand(left, expression.Operator, false);
+        right = ExpressionOperators.NormalizeOperand(right, expression.Operator, true);
+        // C#'s explicit test and GDScript's implicit numeric condition share one boolean node.
+        if (expression.Operator is "==" or "!=")
+        {
+            var tested = right is ValueExpression { Text: "0" } ? left
+                : left is ValueExpression { Text: "0" } ? right : null;
+            if (tested is not null && ExpressionOperators.IsBitwise(tested))
+            {
+                var condition = new BitmaskConditionExpression(ExpressionOperators.BitmaskValue(tested));
+                return expression.Operator == "!=" ? condition : new UnaryExpression("not", condition);
+            }
+        }
         return expression with { Left = left, Right = right };
+    }
+
+    // Limit implicit truthiness conversion to bitmask expressions, not arbitrary numbers or objects.
+    private Expression NormalizeBoolean(Expression expression, BindingScope scope)
+    {
+        var normalized = NormalizeExpression(expression, scope);
+        if (!ExpressionOperators.IsBitwise(normalized) || ResolveType(normalized, scope)?.Kind == TypeKind.Bool)
+            return normalized;
+        return new BitmaskConditionExpression(ExpressionOperators.BitmaskValue(normalized));
     }
 
     private Expression NormalizeConditionalExpression(ConditionalExpression expression, BindingScope scope)
     {
-        var condition = NormalizeExpression(expression.Condition, scope);
+        var condition = NormalizeBoolean(expression.Condition, scope);
         return expression with
         {
             Condition = condition,
@@ -454,7 +481,7 @@ internal sealed class SemanticNormalizer
             LambdaExpression lambda => lambda with
             {
                 Parameters = NormalizeParameters(lambda.Parameters, scope),
-                Elements = NormalizeCallable(lambda.Parameters, lambda.Elements, scope)
+                Elements = NormalizeCallable(lambda.Parameters, lambda.Elements, scope, returnType: lambda.ReturnType)
             },
             CallableInvocationExpression callable => callable with
             {
@@ -508,7 +535,7 @@ internal sealed class SemanticNormalizer
             BinaryExpression binary => NormalizeBinary(binary, scope),
             UnaryExpression unary => unary with
             {
-                Operand = NormalizeExpression(unary.Operand, scope)
+                Operand = unary.Operator == "not" ? NormalizeBoolean(unary.Operand, scope) : NormalizeExpression(unary.Operand, scope)
             },
             ConditionalExpression conditional => NormalizeConditionalExpression(conditional, scope),
             InterpolatedStringExpression interpolated => NormalizeInterpolated(interpolated, scope),
@@ -864,7 +891,7 @@ internal sealed class SemanticNormalizer
             return lambda with
             {
                 Parameters = bound.Parameters,
-                Elements = NormalizeCallable(bound.Parameters, bound.Elements, scope),
+                Elements = NormalizeCallable(bound.Parameters, bound.Elements, scope, returnType: lambda.ReturnType),
                 IsInline = lambda.IsInline || bound.Folded && bound.Elements.Count == 1
                     && bound.Elements[0] is ExpressionStatement or ReturnStatement
             };
@@ -998,6 +1025,11 @@ internal sealed class SemanticNormalizer
     {
         NarrowedValueExpression narrowed => narrowed.Type,
         TypeCheckExpression => new TypeReference("bool"),
+        BitmaskConditionExpression => new TypeReference("bool"),
+        UnaryExpression { Operator: "not" } => new TypeReference("bool"),
+        UnaryExpression unary => ResolveType(unary.Operand, scope),
+        BinaryExpression { Operator: "and" or "or" or "==" or "!=" or "<" or "<=" or ">" or ">=" } => new TypeReference("bool"),
+        BinaryExpression binary => ResolveType(binary.Left, scope) ?? ResolveType(binary.Right, scope),
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
@@ -1005,6 +1037,9 @@ internal sealed class SemanticNormalizer
         CallableNullExpression => new TypeReference("bool"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
+        ValueExpression { Text: "true" or "false" } => new TypeReference("bool"),
+        ValueExpression value when value.Text.Length > 0 && char.IsDigit(value.Text[0]) =>
+            new TypeReference(value.Text.Contains('.') ? "float" : "int"),
         ValueExpression value => scope.Resolve(value.Text),
         ConversionExpression conversion => conversion.Type,
         SafeCastExpression cast => cast.Type,
@@ -1055,6 +1090,7 @@ internal sealed class SemanticNormalizer
         }
 
         public TypeReference CurrentInstanceType { get; }
+        public TypeReference? ReturnType { get; set; }
         public Dictionary<string, SignalDeclaration> Signals { get; }
         // Shared across callable scopes within one class; records the required native handler signatures.
         public Dictionary<string, List<TypeReference>> HandlerTypes { get; } = new(StringComparer.Ordinal);

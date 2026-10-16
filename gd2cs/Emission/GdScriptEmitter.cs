@@ -311,7 +311,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     break;
                 case WhileStatement statement:
                     output.Append(indent + "while ");
-                    EmitExpression(output, statement.Condition, indent);
+                    EmitExpression(output, statement.Condition, indent, booleanContext: true);
                     output.AppendLine(":");
                     EmitBody(output, statement.Elements, indent + "\t");
                     break;
@@ -335,7 +335,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
         for (var index = 0; index < statement.Branches.Count; index++)
         {
             output.Append(indent + (index == 0 ? "if " : "elif "));
-            EmitExpression(output, statement.Branches[index].Condition, indent);
+            EmitExpression(output, statement.Branches[index].Condition, indent, booleanContext: true);
             output.AppendLine(":");
             EmitBody(output, statement.Branches[index].Elements, indent + "\t");
         }
@@ -345,10 +345,15 @@ public sealed class GdScriptEmitter : IScriptEmitter
         EmitBody(output, statement.ElseElements, indent + "\t");
     }
 
-    private void EmitExpression(StringBuilder output, Expression expression, string indent)
+    private void EmitExpression(StringBuilder output, Expression expression, string indent, bool booleanContext = false)
     {
         switch (expression)
         {
+            case BitmaskConditionExpression condition:
+                EmitExpression(output, condition.Value, indent);
+                if (!booleanContext)
+                    output.Append(" != 0");
+                break;
             case TypeCheckExpression test:
                 EmitExpression(output, test.Value, indent);
                 output.Append(test.IsNegated ? " is not " : " is ");
@@ -453,7 +458,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitCollectionOperation(output, collection, indent);
                 break;
             case BinaryExpression binary:
-                EmitExpression(output, binary.Left, indent);
+                EmitOperand(output, binary.Left, binary.Operator, false, indent);
                 if (binary.LineBreaksBeforeOperator > 0)
                     EmitLineBreaks(output, binary.LineBreaksBeforeOperator, indent);
                 else
@@ -463,18 +468,18 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     EmitLineBreaks(output, binary.LineBreaksAfterOperator, indent);
                 else
                     output.Append(' ');
-                EmitExpression(output, binary.Right, indent);
+                EmitOperand(output, binary.Right, binary.Operator, true, indent);
                 break;
             case UnaryExpression unary:
                 output.Append(unary.Operator);
                 if (unary.Operator == "not")
                     output.Append(' ');
-                EmitExpression(output, unary.Operand, indent);
+                EmitExpression(output, unary.Operand, indent, booleanContext: unary.Operator == "not");
                 break;
             case ConditionalExpression conditional:
                 EmitExpression(output, conditional.WhenTrue, indent);
                 output.Append(" if ");
-                EmitExpression(output, conditional.Condition, indent);
+                EmitExpression(output, conditional.Condition, indent, booleanContext: true);
                 output.Append(" else ");
                 EmitExpression(output, conditional.WhenFalse, indent);
                 break;
@@ -514,6 +519,17 @@ public sealed class GdScriptEmitter : IScriptEmitter
     }
 
     // Reuses callable parameters and statements while preserving inline versus multiline layout.
+    // Logical operands allow numeric masks; arithmetic operands keep numeric values unchanged.
+    private void EmitOperand(StringBuilder output, Expression child, string operation, bool right, string indent)
+    {
+        var grouped = ExpressionOperators.NeedsParentheses(child, operation, right, ScriptLanguage.GdScript);
+        if (grouped)
+            output.Append('(');
+        EmitExpression(output, child, indent, booleanContext: operation is "and" or "or");
+        if (grouped)
+            output.Append(')');
+    }
+
     private void EmitLambda(StringBuilder output, LambdaExpression lambda, string indent)
     {
         output.Append("func ");
