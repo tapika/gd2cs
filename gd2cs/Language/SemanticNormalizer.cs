@@ -248,10 +248,13 @@ internal sealed class SemanticNormalizer
     };
 
     // The assignment target supplies the type needed to interpret an empty value safely.
-    private AssignmentStatement NormalizeAssignment(AssignmentStatement statement, BindingScope scope)
+    private SyntaxElement NormalizeAssignment(AssignmentStatement statement, BindingScope scope)
     {
-        // Storing a dictionary value does not read it and therefore requires no cast.
-        var target = NormalizeExpression(statement.Target, scope, allowVariantDictionaryRead: true);
+        if (language == ScriptLanguage.CSharp && statement.Operator is "+=" or "-="
+            && TryNormalizeEventAssignment(statement, scope, out var connection))
+            return new ExpressionStatement(connection);
+        // Compound assignment also reads its target; Variant dictionary reads still require a cast.
+        var target = NormalizeExpression(statement.Target, scope, allowVariantDictionaryRead: statement.Operator == "=");
         var value = NormalizeTypedValue(ResolveType(target, scope), statement.Value, scope)!;
         return statement with { Target = target, Value = value };
     }
@@ -352,7 +355,6 @@ internal sealed class SemanticNormalizer
     {
         var normalized = expression switch
         {
-            EventSubscriptionExpression subscription => NormalizeEventSubscription(subscription, scope),
             // A lambda adds a lexical scope; captured names resolve through its enclosing frames.
             // GDScript snapshots captured locals, while C# closures share them. Reassignment of
             // captured locals is outside this translation subset; shared object mutation is valid.
@@ -693,22 +695,34 @@ internal sealed class SemanticNormalizer
     }
 
     // Native event subscriptions reuse the same receiver-driven binding as GDScript connections.
-    private Expression NormalizeEventSubscription(EventSubscriptionExpression subscription, BindingScope scope)
+    private bool TryNormalizeEventAssignment(AssignmentStatement statement, BindingScope scope, out Expression connection)
     {
-        if (subscription.Event is not MemberAccessExpression member)
-            throw SourceLocations.Error(subscription, "Event subscription requires a known Godot signal receiver.");
+        connection = null!;
+        if (statement.Target is not MemberAccessExpression member)
+            return false;
         var receiver = NormalizeExpression(member.Target, scope);
         var receiverType = ResolveType(receiver, scope);
         if (receiverType is null || scope.UserTypes.Contains(receiverType.Name)
             || !godotTypes.TryResolveSignal(receiverType.Name, member.Member, language, out var signal))
-            throw SourceLocations.Error(subscription, "Event subscription requires a known Godot signal receiver.");
-        var callback = subscription.Arguments.Arguments.Single();
-        var location = SourceLocations.Copy(subscription, new InvocationExpression(subscription.Event, subscription.Arguments));
-        var handler = NormalizeSignalHandler(callback.Value, signal, scope, location);
-        return new SignalConnectionExpression(receiver, signal, subscription.Arguments with
+            return false;
+        // Only reflected events interpret +=/-= as subscriptions; arithmetic keeps the original target.
+        var callback = statement.Value;
+        var startsOnNewLine = false;
+        var closesOnNewLine = false;
+        if (callback is ParenthesizedExpression grouped)
         {
-            Arguments = new List<Argument> { callback with { Value = handler } }
-        }, subscription.IsDisconnect);
+            startsOnNewLine = grouped.OpeningLineBreaks > 0;
+            closesOnNewLine = grouped.ClosingLineBreaks > 0;
+            callback = grouped.Expression;
+        }
+        var arguments = new ArgumentList(new List<Argument> { new(callback, startsOnNewLine) }, closesOnNewLine);
+        var location = SourceLocations.Copy(statement, new InvocationExpression(statement.Target, arguments));
+        var handler = NormalizeSignalHandler(callback, signal, scope, location);
+        connection = new SignalConnectionExpression(receiver, signal, arguments with
+        {
+            Arguments = new List<Argument> { new(handler, startsOnNewLine) }
+        }, statement.Operator == "-=");
+        return true;
     }
 
     // Width differences are dialect details; unrelated types cannot be made compatible by renaming.

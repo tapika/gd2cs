@@ -13,6 +13,19 @@ func evaluate(value: int):
 func select(condition: bool, left: int, right: int) -> int:
 	return left if condition else right
 
+func compound(value: float, values: Array[int], node: Node3D, offset: Vector3):
+	var total := 12.0
+	total += value * 2.0
+	total -= value
+	total *= 2.0
+	total /= 2.0
+	DefaultOrder += 1
+	values[nextIndex()] += 2
+	node.position += offset
+
+func nextIndex() -> int:
+	return 0
+
 func multiline(value: int) -> int:
 	var total := (
 		value * 2

@@ -288,33 +288,12 @@ public sealed class CSharpParser : IScriptParser
             }
             var statementStart = tokens.Current;
             var expression = ParseExpression();
-            if (tokens.Current.Kind is TokenKind.PlusEquals or TokenKind.MinusEquals)
-            {
-                var isDisconnect = tokens.TryConsume(TokenKind.MinusEquals);
-                if (!isDisconnect)
-                    tokens.Expect(TokenKind.PlusEquals);
-                // Parentheses retain the callback layout of a multiline GDScript connect call.
-                var callback = ParseExpression();
-                var startsOnNewLine = false;
-                var closesOnNewLine = false;
-                if (callback is ParenthesizedExpression grouped)
-                {
-                    startsOnNewLine = grouped.OpeningLineBreaks > 0;
-                    closesOnNewLine = grouped.ClosingLineBreaks > 0;
-                    callback = grouped.Expression;
-                }
-                tokens.Expect(TokenKind.Semicolon);
-                EndOfLine();
-                elements.Add(new ExpressionStatement(SourceLocations.Record(new EventSubscriptionExpression(
-                    expression, new ArgumentList(new List<Argument> { new(callback, startsOnNewLine) }, closesOnNewLine), isDisconnect), statementStart)));
-                continue;
-            }
-            if (tokens.TryConsume(TokenKind.Equals))
+            if (tokens.TryConsumeAssignment(out var operation))
             {
                 var value = ParseExpression();
                 tokens.Expect(TokenKind.Semicolon);
                 EndOfLine();
-                elements.Add(new AssignmentStatement(expression, value));
+                elements.Add(SourceLocations.Record(new AssignmentStatement(expression, value, operation), statementStart));
                 continue;
             }
             if (expression is not InvocationExpression)

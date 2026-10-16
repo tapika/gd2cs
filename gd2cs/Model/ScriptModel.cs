@@ -182,9 +182,6 @@ public sealed record GodotSignalReference(string DeclaringType, string Name, Lis
 // Adds/removes a signal handler; callback layout is independent of connect/disconnect and +=/-= syntax.
 public sealed record SignalConnectionExpression(Expression Target, GodotSignalReference Signal, ArgumentList Arguments, bool IsDisconnect = false) : Expression;
 
-// Retains an unbound C# event subscription until the receiver's signal type is resolved.
-public sealed record EventSubscriptionExpression(Expression Event, ArgumentList Arguments, bool IsDisconnect = false) : Expression;
-
 // Identifies a reflected Godot global function without storing either language's spelling.
 public sealed record GodotGlobalFunctionReference(
     string DeclaringType,
@@ -383,8 +380,8 @@ public sealed record ParameterDeclaration(
 // Provides the language-neutral base for callable-body operations.
 public abstract record Statement : SyntaxElement;
 
-// Represents assignment to any supported assignable expression.
-public sealed record AssignmentStatement(Expression Target, Expression Value) : Statement;
+// Retains compound assignment as one operation, so a complex target is evaluated only once.
+public sealed record AssignmentStatement(Expression Target, Expression Value, string Operator = "=") : Statement;
 
 // Represents either a value-returning statement or a bare return.
 public sealed record ReturnStatement(Expression? Value) : Statement;

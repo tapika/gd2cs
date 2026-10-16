@@ -628,7 +628,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 case AssignmentStatement statement:
                     output.Append(indent);
                     EmitExpression(output, statement.Target, indent);
-                    output.Append(" = ");
+                    output.Append(' ');
+                    output.Append(statement.Operator);
+                    output.Append(' ');
                     EmitExpression(output, statement.Value, indent);
                     output.AppendLine(";");
                     break;

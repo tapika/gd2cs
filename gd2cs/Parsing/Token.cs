@@ -29,6 +29,8 @@ internal enum TokenKind
     Plus,
     PlusEquals,
     MinusEquals,
+    StarEquals,
+    SlashEquals,
     Minus,
     Star,
     Slash,

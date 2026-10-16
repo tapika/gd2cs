@@ -71,6 +71,17 @@ internal sealed class TokenReader
             Advance();
     }
 
+    // Both languages share assignment tokens; event meaning is resolved later from the target type.
+    public bool TryConsumeAssignment(out string operation)
+    {
+        operation = Current.Text;
+        if (Current.Kind is not (TokenKind.Equals or TokenKind.PlusEquals or TokenKind.MinusEquals
+            or TokenKind.StarEquals or TokenKind.SlashEquals))
+            return false;
+        Advance();
+        return true;
+    }
+
     // Retains tokens already fetched while looking across continuation lines.
     private void Advance()
     {

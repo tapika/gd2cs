@@ -70,6 +70,8 @@ internal sealed class Lexer
                     ('=', '>') => TokenKind.LambdaArrow,
                     ('+', '=') => TokenKind.PlusEquals,
                     ('-', '=') => TokenKind.MinusEquals,
+                    ('*', '=') => TokenKind.StarEquals,
+                    ('/', '=') => TokenKind.SlashEquals,
                     ('=', '=') => TokenKind.EqualEqual,
                     ('!', '=') => TokenKind.BangEqual,
                     ('<', '=') => TokenKind.LessThanOrEqual,

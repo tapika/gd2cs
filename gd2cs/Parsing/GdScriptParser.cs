@@ -199,11 +199,12 @@ public sealed class GdScriptParser : IScriptParser
                 EndOfLine(optional: true);
                 continue;
             }
+            var assignmentToken = tokens.Current;
             var expression = ParseExpression();
-            if (tokens.TryConsume(TokenKind.Equals))
+            if (tokens.TryConsumeAssignment(out var operation))
             {
                 var value = tokens.Current.Text == "func" ? ParseLambda(statementColumn) : ParseExpression();
-                elements.Add(new AssignmentStatement(expression, value));
+                elements.Add(SourceLocations.Record(new AssignmentStatement(expression, value, operation), assignmentToken));
                 EndOfLine(optional: true);
                 continue;
             }
