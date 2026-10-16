@@ -112,6 +112,17 @@ Use `=` to retain dynamic access to the returned C# instance's members. Call the
 
 ## Unsupported language features
 
+### Multiline conditional expressions
+
+GDScript permits multiline `value_if_true if condition else value_if_false` expressions inside parentheses, but gd2cs currently supports only their single-line form. Use ordinary `if`/`else` statements instead:
+
+```gdscript
+if enabled:
+    applyValue(first)
+else:
+    applyValue(second)
+```
+
 ### Untyped dictionaries
 
 `gd2cs` rejects untyped `Dictionary` declarations (including `Array[Dictionary]`), anonymous dictionary literals, and non-generic C# `Godot.Collections.Dictionary`. Specify both key and value types instead:
