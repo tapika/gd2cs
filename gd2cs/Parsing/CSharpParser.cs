@@ -11,7 +11,7 @@ public sealed class CSharpParser : IScriptParser
 
     public ScriptModel Parse(string source)
     {
-        tokens = new TokenReader(new Lexer(source, true));
+        tokens = new TokenReader(new Lexer(source, true, cSharpIdentifiers: true));
         groupingDepth = 0;
         ParseUsing("Godot");
         ParseUsing("System");
@@ -532,9 +532,18 @@ public sealed class CSharpParser : IScriptParser
                 left = new SafeCastExpression(ParseType(), left);
                 continue;
             }
-            if (minimumPrecedence <= 2 && tokens.TryConsume(TokenKind.Identifier, "is"))
+            if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "is"))
             {
                 var isNotNull = tokens.TryConsume(TokenKind.Identifier, "not");
+                if (tokens.Current.Text != "null")
+                {
+                    var type = ParseType();
+                    // Pattern identifiers are optional; contextual words must remain operators.
+                    var patternName = tokens.Current.Kind == TokenKind.Identifier && tokens.Current.Text is not ("as" or "is")
+                        ? tokens.Expect(TokenKind.Identifier).Text : null;
+                    left = new TypeCheckExpression(left, type, isNotNull, patternName);
+                    continue;
+                }
                 tokens.Expect(TokenKind.Identifier, "null");
                 if (left is not MemberAccessExpression { Member: "Delegate" } member)
                     throw new ParseException("Callable null check requires Delegate", tokens.Current.Line, tokens.Current.Column);
@@ -808,7 +817,7 @@ public sealed class CSharpParser : IScriptParser
         var outerTokens = tokens;
         try
         {
-            tokens = new TokenReader(new Lexer(source, false));
+            tokens = new TokenReader(new Lexer(source, false, cSharpIdentifiers: true));
             var value = ParseExpression();
             var format = tokens.TryConsume(TokenKind.Colon)
                 ? tokens.Expect(TokenKind.Identifier).Text

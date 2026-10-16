@@ -238,11 +238,7 @@ internal sealed class SemanticNormalizer
         },
         LocalVariableStatement statement => NormalizeLocal(statement, scope),
         ForEachStatement statement => NormalizeForEach(statement, scope),
-        WhileStatement statement => statement with
-        {
-            Condition = NormalizeExpression(statement.Condition, scope),
-            Elements = NormalizeNestedBody(statement.Elements, scope)
-        },
+        WhileStatement statement => NormalizeWhile(statement, scope),
         ConditionalStatement statement => NormalizeConditional(statement, scope),
         _ => element
     };
@@ -250,6 +246,8 @@ internal sealed class SemanticNormalizer
     // The assignment target supplies the type needed to interpret an empty value safely.
     private SyntaxElement NormalizeAssignment(AssignmentStatement statement, BindingScope scope)
     {
+        if (statement.Target is ValueExpression variable && scope.FindNarrowed(variable.Text) is not null)
+            throw SourceLocations.Error(statement, "Reassigning a type-narrowed variable is not supported.");
         if (language == ScriptLanguage.CSharp && statement.Operator is "+=" or "-="
             && TryNormalizeEventAssignment(statement, scope, out var connection))
             return new ExpressionStatement(connection);
@@ -333,20 +331,113 @@ internal sealed class SemanticNormalizer
     private ConditionalStatement NormalizeConditional(ConditionalStatement statement, BindingScope scope)
     {
         var branches = new List<ConditionalBranch>();
-        foreach (var branch in statement.Branches)
+        scope.Push();
+        try
         {
-            branches.Add(branch with
+            foreach (var branch in statement.Branches)
             {
-                Condition = NormalizeExpression(branch.Condition, scope),
-                Elements = NormalizeNestedBody(branch.Elements, scope)
-            });
+                var condition = NormalizeExpression(branch.Condition, scope);
+                var body = UnderCondition(condition, true, scope, () => NormalizeNestedBody(branch.Elements, scope));
+                branches.Add(branch with { Condition = condition, Elements = body });
+                // Later elif/else branches execute only after every earlier condition failed.
+                ApplyTypeFacts(condition, false, scope);
+            }
+            return statement with
+            {
+                Branches = branches,
+                ElseElements = statement.ElseElements is null ? null : NormalizeNestedBody(statement.ElseElements, scope)
+            };
         }
+        finally
+        {
+            scope.Pop();
+        }
+    }
+
+    private WhileStatement NormalizeWhile(WhileStatement statement, BindingScope scope)
+    {
+        var condition = NormalizeExpression(statement.Condition, scope);
         return statement with
         {
-            Branches = branches,
-            ElseElements = statement.ElseElements is null
-                ? null
-                : NormalizeNestedBody(statement.ElseElements, scope)
+            Condition = condition,
+            Elements = UnderCondition(condition, true, scope, () => NormalizeNestedBody(statement.Elements, scope))
+        };
+    }
+
+    /* Type facts are lexical, not global substitutions. For A && B, B sees facts proving
+       A true; for A || B, it sees facts proving A false. A successful conjunction proves
+       both operands; a failed disjunction disproves both. Other paths provide no safe
+       narrowing. Each narrowed read retains the exact proving test, so emission can use
+       its definitely-assigned C# pattern variable even when tests repeat or are negated.
+       C# pattern names are aliases only: they disappear from the language-neutral model. */
+    private T UnderCondition<T>(Expression condition, bool truth, BindingScope scope, Func<T> action)
+    {
+        scope.Push();
+        try
+        {
+            ApplyTypeFacts(condition, truth, scope);
+            return action();
+        }
+        finally
+        {
+            scope.Pop();
+        }
+    }
+
+    private static void ApplyTypeFacts(Expression condition, bool truth, BindingScope scope)
+    {
+        switch (condition)
+        {
+            case TypeCheckExpression test when test.IsNegated != truth && test.Value is ValueExpression variable:
+                if (scope.IsLocal(variable.Text))
+                {
+                    var narrowed = new NarrowedValueExpression(variable, test.Type, test);
+                    scope.Narrow(variable.Text, narrowed);
+                    if (scope.PatternNames.TryGetValue(test, out var alias) && alias is not null)
+                        scope.Narrow(alias, narrowed);
+                }
+                break;
+            case ParenthesizedExpression grouped:
+                ApplyTypeFacts(grouped.Expression, truth, scope);
+                break;
+            case UnaryExpression { Operator: "not" } unary:
+                ApplyTypeFacts(unary.Operand, !truth, scope);
+                break;
+            case BinaryExpression binary when binary.Operator == (truth ? "and" : "or"):
+                ApplyTypeFacts(binary.Left, truth, scope);
+                ApplyTypeFacts(binary.Right, truth, scope);
+                break;
+        }
+    }
+
+    private Expression NormalizeTypeCheck(TypeCheckExpression expression, BindingScope scope)
+    {
+        var value = NormalizeExpression(expression.Value, scope);
+        // A nested test still tests the original variable, not a C#-only alias.
+        if (value is NarrowedValueExpression narrowed)
+            value = narrowed.Value;
+        var test = expression with { Value = value, PatternName = null };
+        scope.PatternNames[test] = expression.PatternName;
+        return test;
+    }
+
+    private Expression NormalizeBinary(BinaryExpression expression, BindingScope scope)
+    {
+        var left = NormalizeExpression(expression.Left, scope);
+        var right = expression.Operator is "and" or "or"
+            ? UnderCondition(left, expression.Operator == "and", scope, () => NormalizeExpression(expression.Right, scope))
+            : NormalizeExpression(expression.Right, scope);
+        return expression with { Left = left, Right = right };
+    }
+
+    private Expression NormalizeConditionalExpression(ConditionalExpression expression, BindingScope scope)
+    {
+        var condition = NormalizeExpression(expression.Condition, scope);
+        return expression with
+        {
+            Condition = condition,
+            WhenTrue = UnderCondition(condition, true, scope, () => NormalizeExpression(expression.WhenTrue, scope)),
+            WhenFalse = UnderCondition(condition, false, scope, () => NormalizeExpression(expression.WhenFalse, scope))
         };
     }
 
@@ -355,6 +446,8 @@ internal sealed class SemanticNormalizer
     {
         var normalized = expression switch
         {
+            TypeCheckExpression test => NormalizeTypeCheck(test, scope),
+            ValueExpression value when scope.FindNarrowed(value.Text) is { } narrowed => narrowed,
             // A lambda adds a lexical scope; captured names resolve through its enclosing frames.
             // GDScript snapshots captured locals, while C# closures share them. Reassignment of
             // captured locals is outside this translation subset; shared object mutation is valid.
@@ -412,21 +505,12 @@ internal sealed class SemanticNormalizer
                 Target = NormalizeExpression(method.Target, scope),
                 Arguments = NormalizeArguments(method.Arguments, scope)
             },
-            BinaryExpression binary => binary with
-            {
-                Left = NormalizeExpression(binary.Left, scope),
-                Right = NormalizeExpression(binary.Right, scope)
-            },
+            BinaryExpression binary => NormalizeBinary(binary, scope),
             UnaryExpression unary => unary with
             {
                 Operand = NormalizeExpression(unary.Operand, scope)
             },
-            ConditionalExpression conditional => conditional with
-            {
-                Condition = NormalizeExpression(conditional.Condition, scope),
-                WhenTrue = NormalizeExpression(conditional.WhenTrue, scope),
-                WhenFalse = NormalizeExpression(conditional.WhenFalse, scope)
-            },
+            ConditionalExpression conditional => NormalizeConditionalExpression(conditional, scope),
             InterpolatedStringExpression interpolated => NormalizeInterpolated(interpolated, scope),
             ParenthesizedExpression parenthesized => parenthesized with
             {
@@ -912,6 +996,8 @@ internal sealed class SemanticNormalizer
     // Infers only types needed for safe downstream collection binding.
     private static TypeReference? ResolveType(Expression? expression, BindingScope scope) => expression switch
     {
+        NarrowedValueExpression narrowed => narrowed.Type,
+        TypeCheckExpression => new TypeReference("bool"),
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
@@ -951,6 +1037,8 @@ internal sealed class SemanticNormalizer
         private readonly Dictionary<string, TypeReference> members;
         private readonly Dictionary<string, List<MethodDeclaration>> methods;
         private readonly List<Dictionary<string, TypeReference>> frames = new();
+        // Null entries mask outer facts when a new local shadows a narrowed name.
+        private readonly List<Dictionary<string, NarrowedValueExpression?>> narrowedFrames = new();
 
         public BindingScope(
             Dictionary<string, TypeReference> members,
@@ -970,6 +1058,8 @@ internal sealed class SemanticNormalizer
         public Dictionary<string, SignalDeclaration> Signals { get; }
         // Shared across callable scopes within one class; records the required native handler signatures.
         public Dictionary<string, List<TypeReference>> HandlerTypes { get; } = new(StringComparer.Ordinal);
+        // Parser aliases are attached to exact tests, not to names that can be shadowed or reused.
+        public Dictionary<TypeCheckExpression, string?> PatternNames { get; } = new(ReferenceEqualityComparer.Instance);
         public HashSet<string> UserTypes { get; }
 
         // Instance methods are unavailable in static bodies and outside callable bodies.
@@ -981,11 +1071,39 @@ internal sealed class SemanticNormalizer
         public MethodDeclaration? FindHandler(string name) =>
             methods.TryGetValue(name, out var overloads) && overloads.Count == 1 ? overloads[0] : null;
 
-        public void Push() => frames.Add(new Dictionary<string, TypeReference>(StringComparer.Ordinal));
+        public void Push()
+        {
+            frames.Add(new Dictionary<string, TypeReference>(StringComparer.Ordinal));
+            narrowedFrames.Add(new Dictionary<string, NarrowedValueExpression?>(StringComparer.Ordinal));
+        }
 
-        public void Pop() => frames.RemoveAt(frames.Count - 1);
+        public void Pop()
+        {
+            frames.RemoveAt(frames.Count - 1);
+            narrowedFrames.RemoveAt(narrowedFrames.Count - 1);
+        }
 
-        public void Declare(string name, TypeReference type) => frames[^1][name] = type;
+        public void Declare(string name, TypeReference type)
+        {
+            frames[^1][name] = type;
+            narrowedFrames[^1][name] = null;
+        }
+
+        public bool IsLocal(string name) => frames.Any(frame => frame.ContainsKey(name));
+
+        public void Narrow(string name, NarrowedValueExpression value)
+        {
+            frames[^1][name] = value.Type;
+            narrowedFrames[^1][name] = value;
+        }
+
+        public NarrowedValueExpression? FindNarrowed(string name)
+        {
+            for (var index = narrowedFrames.Count - 1; index >= 0; index--)
+                if (narrowedFrames[index].TryGetValue(name, out var value))
+                    return value;
+            return null;
+        }
 
         public TypeReference? Resolve(string name)
         {

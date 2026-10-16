@@ -349,6 +349,14 @@ public sealed class GdScriptEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case TypeCheckExpression test:
+                EmitExpression(output, test.Value, indent);
+                output.Append(test.IsNegated ? " is not " : " is ");
+                EmitType(output, test.Type);
+                break;
+            case NarrowedValueExpression narrowed:
+                EmitExpression(output, narrowed.Value, indent);
+                break;
             case SignalConnectionExpression connection:
                 EmitExpression(output, connection.Target, indent);
                 output.Append('.');

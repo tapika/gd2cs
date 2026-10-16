@@ -180,6 +180,10 @@ public sealed class GodotTypeCatalog
         [
             KnownMember("Node3D", "Position", "Vector3"),
             KnownMember("Node3D", "GlobalPosition", "Vector3"),
+            KnownMember("InputEventKey", "Pressed", "bool"),
+            KnownMember("InputEventKey", "Echo", "bool"),
+            KnownMember("InputEventMouseButton", "Pressed", "bool"),
+            KnownMember("InputEventMouseButton", "Position", "Vector2"),
             KnownMember("Vector2", "X", "float"),
             KnownMember("Vector2", "Y", "float"),
             KnownMember("Vector3", "X", "float"),

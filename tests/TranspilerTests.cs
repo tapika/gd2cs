@@ -126,6 +126,21 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData(".gd", "acceptKey(event)", "event = event")]
+    [InlineData(".cs", "acceptKey(eventTyped2);", "@event = @event;")]
+    public void RejectNarrowedAssignment(string extension, string original, string replacement)
+    {
+        var source = File.ReadAllText(Fixture("Statements/ControlFlow" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Equal("Reassigning a type-narrowed variable is not supported.", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].Length - lines[line].TrimStart().Length + 1, error.Column);
+    }
+
+    [Theory]
     [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onSelected)",
         "Signal handler must return void and match the signal's argument count.")]
     [InlineData(".gd", "ChoiceButton.item_selected.connect(onSelected)", "ChoiceButton.item_selected.connect(missingHandler)",

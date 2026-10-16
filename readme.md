@@ -112,6 +112,10 @@ Use `=` to retain dynamic access to the returned C# instance's members. Call the
 
 ## Unsupported language features
 
+### Reassigning type-narrowed variables
+
+`is` / `is not` checks support local/parameter type narrowing in conditional branches, loops, conditional expressions and short-circuit boolean expressions. C# uses collision-free pattern variables; GDScript retains the original variable names. Reassigning a narrowed variable is currently rejected, since assigning a C# pattern variable would not update the original variable. Use a separate local instead.
+
 ### Multiline conditional expressions
 
 GDScript permits multiline `value_if_true if condition else value_if_false` expressions inside parentheses, but gd2cs currently supports only their single-line form. Use ordinary `if`/`else` statements instead:

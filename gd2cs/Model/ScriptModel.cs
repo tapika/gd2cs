@@ -129,6 +129,14 @@ public sealed record ConversionExpression(
 // Object casts keep the same instance on success and return null on incompatible types.
 public sealed record SafeCastExpression(TypeReference Type, Expression Value) : Expression;
 
+// Tests runtime type identity; PatternName is parser-only C# syntax, cleared during binding.
+public sealed record TypeCheckExpression(Expression Value, TypeReference Type, bool IsNegated = false,
+    string? PatternName = null) : Expression;
+
+// Reads the original variable through a type proven by the surrounding boolean control flow.
+// C# uses the corresponding pattern variable; GDScript retains the original variable spelling.
+public sealed record NarrowedValueExpression(ValueExpression Value, TypeReference Type, TypeCheckExpression Test) : Expression;
+
 // Extracts a concrete dictionary value from Variant; object casts retain null-on-mismatch semantics.
 public sealed record VariantCastExpression(TypeReference Type, Expression Value, bool IsObjectCast = false) : Expression;
 

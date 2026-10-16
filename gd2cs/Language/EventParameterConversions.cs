@@ -72,7 +72,7 @@ internal static class EventParameterConversions
 
     // Conservatively reserve all spellings in model records, including nested lambda/local names.
     // Traversing only model data avoids source-text matching and automatically covers new node kinds.
-    private static HashSet<string> Names(object? node)
+    internal static HashSet<string> Names(object? node)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         void Visit(object? value)

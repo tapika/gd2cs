@@ -456,6 +456,12 @@ public sealed class GdScriptParser : IScriptParser
                 && OperatorPrecedence(tokens.PeekAfterNewLines()) >= minimumPrecedence
                     ? tokens.ConsumeLineBreaks() : 0;
             // GDScript as casts bind below binary operators.
+            if (minimumPrecedence <= 3 && tokens.TryConsume(TokenKind.Identifier, "is"))
+            {
+                var isNegated = tokens.TryConsume(TokenKind.Identifier, "not");
+                left = new TypeCheckExpression(left, ParseType(), isNegated);
+                continue;
+            }
             if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Identifier, "as"))
             {
                 left = new SafeCastExpression(ParseType(), left);

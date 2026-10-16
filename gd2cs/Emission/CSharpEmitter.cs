@@ -9,6 +9,9 @@ public sealed class CSharpEmitter : IScriptEmitter
 {
     private readonly GodotTypeCatalog godotTypes;
     private bool requiresGdArray;
+    // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
+    private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
+    private HashSet<string> occupiedNames = new(StringComparer.Ordinal);
 
     public CSharpEmitter(GodotTypeCatalog godotTypes)
     {
@@ -18,6 +21,8 @@ public sealed class CSharpEmitter : IScriptEmitter
     public string Emit(ScriptModel model)
     {
         requiresGdArray = false;
+        patternNames.Clear();
+        occupiedNames = EventParameterConversions.Names(model.Elements);
         var output = new StringBuilder();
         output.AppendLine("using Godot;");
         output.AppendLine("using System;");
@@ -149,6 +154,23 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         switch (expression)
         {
+            case TypeCheckExpression test:
+                EmitExpression(output, test.Value, indent);
+                output.Append(test.IsNegated ? " is not " : " is ");
+                EmitType(output, test.Type);
+                if (test.Value is ValueExpression variable)
+                {
+                    var name = variable.Text + "Typed";
+                    for (var suffix = 2; !occupiedNames.Add(name); suffix++)
+                        name = variable.Text + "Typed" + suffix;
+                    patternNames[test] = name;
+                    output.Append(' ');
+                    output.Append(name);
+                }
+                break;
+            case NarrowedValueExpression narrowed:
+                output.Append(patternNames[narrowed.Test]);
+                break;
             case SignalConnectionExpression connection:
                 EmitSignalConnection(output, connection, indent);
                 break;
@@ -202,7 +224,7 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append("this");
                 break;
             case ValueExpression value:
-                output.Append(value.Text);
+                output.Append(EscapeIdentifier(value.Text));
                 if (value.Text.Length > 0 && char.IsDigit(value.Text[0]) && value.Text.Contains('.') && !value.Text.EndsWith('f'))
                     output.Append('f');
                 break;
@@ -598,7 +620,7 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append(' ');
             EmitType(output, parameters.Parameters[index].Type);
             output.Append(' ');
-            output.Append(parameters.Parameters[index].Name);
+            output.Append(EscapeIdentifier(parameters.Parameters[index].Name));
             if (parameters.Parameters[index].DefaultValue is { } defaultValue)
             {
                 output.Append(" = ");
@@ -782,4 +804,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         }
         output.Append('>');
     }
+
+    // Godot input callbacks conventionally use event, which is a reserved C# keyword.
+    private static string EscapeIdentifier(string name) => name == "event" ? "@event" : name;
 }

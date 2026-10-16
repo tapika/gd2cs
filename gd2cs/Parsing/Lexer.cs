@@ -4,14 +4,16 @@ internal sealed class Lexer
 {
     private readonly string source;
     private readonly bool emitNewLines;
+    private readonly bool cSharpIdentifiers;
     private int position;
     private int line = 1;
     private int column = 1;
 
-    public Lexer(string source, bool emitNewLines)
+    public Lexer(string source, bool emitNewLines, bool cSharpIdentifiers = false)
     {
         this.source = source;
         this.emitNewLines = emitNewLines;
+        this.cSharpIdentifiers = cSharpIdentifiers;
     }
 
     // Scans the next token while optionally retaining newlines for layout-aware parsing.
@@ -52,6 +54,13 @@ internal sealed class Lexer
             if (character == '$' && position + 1 < source.Length && source[position + 1] == '"')
                 return ReadInterpolatedString();
 
+            // C# verbatim identifiers preserve the same model name as their GDScript spelling.
+            if (cSharpIdentifiers && character == '@' && position + 1 < source.Length && IsIdentifierStart(source[position + 1]))
+            {
+                var tokenColumn = column;
+                Advance();
+                return ReadIdentifier() with { Column = tokenColumn };
+            }
             if (IsIdentifierStart(character))
                 return ReadIdentifier();
 

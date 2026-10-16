@@ -66,4 +66,71 @@ public partial class ControlFlow : RefCounted
 	{
 		value = value;
 	}
+
+	public void inspectInput(InputEvent @event, bool enabled)
+	{
+		// Reserve the first generated pattern name to test collision handling.
+		var eventTyped = 0;
+		accept(eventTyped);
+		if (@event is InputEventKey eventTyped2 && eventTyped2.Pressed && !eventTyped2.Echo)
+		{
+			acceptKey(eventTyped2);
+		}
+		else if (@event is InputEventMouseButton eventTyped3 && eventTyped3.Pressed)
+		{
+			acceptPoint(eventTyped3.Position);
+		}
+		else
+		{
+			acceptEvent(@event);
+		}
+		acceptEvent(@event);
+
+		if (@event is not InputEventKey eventTyped4)
+		{
+			acceptEvent(@event);
+		}
+		else
+		{
+			acceptKey(eventTyped4);
+		}
+		if (@event is not InputEventKey eventTyped5 || !eventTyped5.Pressed)
+		{
+			acceptEvent(@event);
+		}
+		if (@event is InputEventKey eventTyped6 || enabled)
+		{
+			acceptEvent(@event);
+		}
+
+		if (@event is InputEventKey eventTyped7)
+		{
+			if (eventTyped7.Pressed)
+			{
+				acceptKey(eventTyped7);
+			}
+		}
+		while (@event is InputEventKey eventTyped8 && eventTyped8.Pressed)
+		{
+			acceptKey(eventTyped8);
+			break;
+		}
+		var matched = @event is InputEventKey eventTyped9 ? eventTyped9.Pressed : false;
+		acceptEvent(@event);
+	}
+
+	public void acceptKey(InputEventKey value)
+	{
+		return;
+	}
+
+	public void acceptPoint(Vector2 value)
+	{
+		return;
+	}
+
+	public void acceptEvent(InputEvent value)
+	{
+		return;
+	}
 }
