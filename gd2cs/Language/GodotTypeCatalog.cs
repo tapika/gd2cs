@@ -81,6 +81,8 @@ public sealed class GodotTypeCatalog
     // Looks up signal emission metadata by declaring class and canonical event name.
     private readonly Dictionary<string, CatalogSignal> signalsByIdentity;
     private GodotEnumCatalog enums = GodotEnumCatalog.CreateKnownBuiltIns();
+    // Exact native/managed type aliases share the engine API snapshot used for enum binding.
+    private GodotTypeNames typeNames = GodotTypeNames.CreateKnownBuiltIns();
     // Finds a property or field by concrete receiver type and GDScript name.
     private readonly Dictionary<string, Member> gdScriptMembers;
     // Finds a property or field by concrete receiver type and C# name.
@@ -175,11 +177,15 @@ public sealed class GodotTypeCatalog
             new("Color", 3, 3, false),
             new("Color", 4, 4, false),
             new("Quaternion", 0, 0, false),
-            new("Quaternion", 4, 4, false)
+            new("Quaternion", 4, 4, false),
+            new("Aabb", 0, 0, false),
+            new("Aabb", 2, 2, false)
         ],
         [
             KnownMember("Node3D", "Position", "Vector3"),
             KnownMember("Node3D", "GlobalPosition", "Vector3"),
+            KnownMember("Aabb", "Position", "Vector3"),
+            KnownMember("Aabb", "Size", "Vector3"),
             KnownMember("InputEventKey", "Pressed", "bool"),
             KnownMember("InputEventKey", "Echo", "bool"),
             KnownMember("InputEventMouseButton", "Pressed", "bool"),
@@ -237,7 +243,8 @@ public sealed class GodotTypeCatalog
             throw new FileNotFoundException("GodotSharp.dll was not found beside Godot or inside the project.");
         var assembly = Assembly.LoadFrom(assemblyPath);
         var catalog = FromAssembly(assembly);
-        catalog.enums = GodotEnumCatalog.Load(assembly, executablePath);
+        catalog.enums = GodotEnumCatalog.Load(assembly, executablePath,
+            api => catalog.typeNames = GodotTypeNames.FromApi(assembly, api));
         return catalog;
     }
 
@@ -246,6 +253,9 @@ public sealed class GodotTypeCatalog
 
     public string EnumName(GodotEnumReference reference, ScriptLanguage language) =>
         enums.Name(reference, language);
+
+    public bool TryResolveTypeName(string name, ScriptLanguage language, out string managed, out string native) =>
+        typeNames.TryResolve(name, language, out managed, out native);
 
     public bool IsBuiltInValueConstructor(string typeName, int argumentCount)
     {

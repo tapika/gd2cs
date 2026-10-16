@@ -23,8 +23,9 @@ public sealed record ClassDeclaration(
     bool IsGlobal,
     List<SyntaxElement> Elements) : SyntaxElement;
 
-// Stores a dialect-neutral type name and any nested generic type arguments.
-public sealed record TypeReference(string Name, List<TypeReference> TypeArguments)
+// Stores a canonical type identity and generic arguments. GodotName retains a reflected native
+// alias (e.g. AABB for Aabb); null keeps ordinary/user type spellings unchanged.
+public sealed record TypeReference(string Name, List<TypeReference> TypeArguments, string? GodotName = null)
 {
     // Creates a non-generic type reference without requiring an empty argument list at call sites.
     public TypeReference(string name) : this(name, new List<TypeReference>())

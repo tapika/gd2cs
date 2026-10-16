@@ -24,7 +24,7 @@ internal sealed class GodotEnumCatalog
         return catalog;
     }
 
-    public static GodotEnumCatalog Load(Assembly assembly, string executablePath)
+    public static GodotEnumCatalog Load(Assembly assembly, string executablePath, Action<JsonElement>? inspectApi = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "gd2cs-api-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -54,6 +54,7 @@ internal sealed class GodotEnumCatalog
             if (process.ExitCode != 0)
                 throw new InvalidOperationException("Godot API export failed: " + error.Result + output.Result);
             using var api = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "extension_api.json")));
+            inspectApi?.Invoke(api.RootElement);
             return FromApi(assembly, api.RootElement);
         }
         finally

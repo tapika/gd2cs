@@ -225,7 +225,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
             TypeKind.String => "String",
             TypeKind.Int64 => "int",
             TypeKind.Float64 => "float",
-            _ => type.Name
+            _ => type.GodotName ?? type.Name
         });
         if (type.TypeArguments.Count == 0)
             return;

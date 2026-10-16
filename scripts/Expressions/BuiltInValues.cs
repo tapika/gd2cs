@@ -4,6 +4,9 @@ using System;
 [GlobalClass]
 public partial class BuiltInValues : RefCounted
 {
+	public Aabb Bounds;
+	public Godot.Collections.Array<Aabb> BoundsList = new Godot.Collections.Array<Aabb>();
+
 	public Vector3 create()
 	{
 		var point2 = new Vector2(1.0f, 2.0f);
@@ -38,5 +41,26 @@ public partial class BuiltInValues : RefCounted
 	public bool incompatibleCast()
 	{
 		return (new RefCounted() as Node3D) == null;
+	}
+
+	public Aabb createBounds(Vector3 position, Vector3 size)
+	{
+		Aabb value = new Aabb(position, size);
+		return value;
+	}
+
+	public Vector3 boundsEnd(Aabb value)
+	{
+		return value.Position + value.Size;
+	}
+
+	public Aabb firstBounds(Godot.Collections.Array<Aabb> values)
+	{
+		return values[0];
+	}
+
+	public Aabb extractBounds(Godot.Collections.Dictionary<string, Variant> entries)
+	{
+		return entries["bounds"].As<Aabb>();
 	}
 }

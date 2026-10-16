@@ -1,6 +1,9 @@
 class_name BuiltInValues
 extends RefCounted
 
+var Bounds : AABB
+var BoundsList : Array[AABB]
+
 func create() -> Vector3:
 	var point2 := Vector2(1.0, 2.0)
 	var point3 := Vector3(1.0, 2.0, 3.0)
@@ -24,3 +27,16 @@ func castPosition(node: Node) -> Vector3:
 
 func incompatibleCast() -> bool:
 	return (RefCounted.new() as Node3D) == null
+
+func createBounds(position: Vector3, size: Vector3) -> AABB:
+	var value : AABB = AABB(position, size)
+	return value
+
+func boundsEnd(value: AABB) -> Vector3:
+	return value.position + value.size
+
+func firstBounds(values: Array[AABB]) -> AABB:
+	return values[0]
+
+func extractBounds(entries: Dictionary[String, Variant]) -> AABB:
+	return entries["bounds"] as AABB

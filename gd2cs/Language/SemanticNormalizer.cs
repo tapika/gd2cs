@@ -67,6 +67,12 @@ internal sealed class SemanticNormalizer
         userTypes.Add(declaration.Name);
         foreach (var nested in declaration.Elements.OfType<NestedClassDeclaration>())
             userTypes.Add(nested.Name);
+        // Bind declarations before constructing symbol tables, so receivers use CLR identities too.
+        declaration = declaration with
+        {
+            BaseType = NormalizeType(declaration.BaseType, userTypes),
+            Elements = declaration.Elements.Select(element => NormalizeDeclarationTypes(element, userTypes)).ToList()
+        };
         foreach (var element in declaration.Elements)
         {
             if (element is FieldDeclaration field)
@@ -109,6 +115,47 @@ internal sealed class SemanticNormalizer
         return declaration with { Elements = elements };
     }
 
+    // Canonicalize signatures before callable binding; nested classes bind independently.
+    private SyntaxElement NormalizeDeclarationTypes(SyntaxElement element, HashSet<string> userTypes) => element switch
+    {
+        FieldDeclaration field => field with { Type = NormalizeType(field.Type, userTypes) },
+        ConstantDeclaration constant => constant with { Type = NormalizeType(constant.Type, userTypes) },
+        MethodDeclaration method => method with
+        {
+            ReturnType = NormalizeType(method.ReturnType, userTypes),
+            Parameters = NormalizeParameterTypes(method.Parameters, userTypes)
+        },
+        ConstructorDeclaration constructor => constructor with { Parameters = NormalizeParameterTypes(constructor.Parameters, userTypes) },
+        SignalDeclaration signal => signal with { Parameters = NormalizeParameterTypes(signal.Parameters, userTypes) },
+        _ => element
+    };
+
+    // A Godot alias is bound only in type positions, never in identifiers, comments or strings.
+    private TypeReference NormalizeType(TypeReference type, HashSet<string> userTypes)
+    {
+        var name = type.Name;
+        var native = type.GodotName;
+        if (!userTypes.Contains(name) && godotTypes.TryResolveTypeName(name, language, out var managed, out var godotName))
+        {
+            name = managed;
+            native = godotName == managed ? null : godotName;
+        }
+        return type with
+        {
+            Name = name,
+            GodotName = native,
+            TypeArguments = type.TypeArguments.Select(argument => NormalizeType(argument, userTypes)).ToList()
+        };
+    }
+
+    private ParameterList NormalizeParameterTypes(ParameterList parameters, HashSet<string> userTypes) => parameters with
+    {
+        Parameters = parameters.Parameters.Select(parameter => parameter with
+        {
+            Type = NormalizeType(parameter.Type, userTypes)
+        }).ToList()
+    };
+
     // Recurses only into class elements that can contain expressions or nested scopes.
     private SyntaxElement NormalizeClassElement(SyntaxElement element, BindingScope scope) => element switch
     {
@@ -143,7 +190,7 @@ internal sealed class SemanticNormalizer
     private NestedClassDeclaration NormalizeNestedClass(NestedClassDeclaration nested, BindingScope parentScope)
     {
         var normalized = NormalizeClass(new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements), parentScope.UserTypes);
-        return nested with { Elements = normalized.Elements };
+        return nested with { BaseType = normalized.BaseType, Elements = normalized.Elements };
     }
 
     // Normalizes optional values without making later parameters visible to earlier defaults.
@@ -151,6 +198,7 @@ internal sealed class SemanticNormalizer
     {
         Parameters = parameters.Parameters.Select(parameter => parameter with
         {
+            Type = NormalizeType(parameter.Type, scope.UserTypes),
             DefaultValue = NormalizeTypedValue(parameter.Type, parameter.DefaultValue, scope)
         }).ToList()
     };
@@ -191,6 +239,7 @@ internal sealed class SemanticNormalizer
         bool isStatic = false,
         TypeReference? returnType = null)
     {
+        parameters = NormalizeParameterTypes(parameters, scope.UserTypes);
         var hadCurrentInstance = scope.HasCurrentInstance;
         var previousReturnType = scope.ReturnType;
         scope.ReturnType = returnType;
@@ -264,11 +313,15 @@ internal sealed class SemanticNormalizer
     // Retains static typing when GDScript cannot infer it from the emitted expression.
     private LocalVariableStatement NormalizeLocal(LocalVariableStatement statement, BindingScope scope)
     {
+        if (statement.Type is not null)
+            statement = statement with { Type = NormalizeType(statement.Type, scope.UserTypes) };
         var initializer = NormalizeTypedValue(statement.Type, statement.Initializer, scope);
         // Typed GDScript locals start empty; CSharpParser already folds their emitted default initializer.
         if (initializer is TypeDefaultExpression && statement.Typing == LocalTyping.Explicit)
             initializer = null;
         var type = statement.Type ?? ResolveType(initializer, scope);
+        if (type is not null)
+            type = NormalizeType(type, scope.UserTypes);
         var typing = statement.Typing;
         if (initializer is DictionaryExpression)
             typing = LocalTyping.Explicit;
@@ -420,7 +473,7 @@ internal sealed class SemanticNormalizer
         // A nested test still tests the original variable, not a C#-only alias.
         if (value is NarrowedValueExpression narrowed)
             value = narrowed.Value;
-        var test = expression with { Value = value, PatternName = null };
+        var test = expression with { Value = value, Type = NormalizeType(expression.Type, scope.UserTypes), PatternName = null };
         scope.PatternNames[test] = expression.PatternName;
         return test;
     }
@@ -481,6 +534,7 @@ internal sealed class SemanticNormalizer
             LambdaExpression lambda => lambda with
             {
                 Parameters = NormalizeParameters(lambda.Parameters, scope),
+                ReturnType = NormalizeType(lambda.ReturnType, scope.UserTypes),
                 Elements = NormalizeCallable(lambda.Parameters, lambda.Elements, scope, returnType: lambda.ReturnType)
             },
             CallableInvocationExpression callable => callable with
@@ -488,22 +542,28 @@ internal sealed class SemanticNormalizer
                 Target = NormalizeExpression(callable.Target, scope),
                 Arguments = NormalizeArguments(callable.Arguments, scope)
             },
-            CallableMethodGroupExpression callable => callable with { Target = NormalizeExpression(callable.Target, scope) },
+            CallableMethodGroupExpression callable => callable with
+            {
+                Target = NormalizeExpression(callable.Target, scope),
+                ParameterTypes = callable.ParameterTypes.Select(type => NormalizeType(type, scope.UserTypes)).ToList()
+            },
             CallableNullExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope)
             },
             ObjectCreationExpression creation => creation with
             {
+                Type = NormalizeType(creation.Type, scope.UserTypes),
                 Arguments = NormalizeArguments(creation.Arguments, scope),
                 Kind = godotTypes.IsBuiltInValueConstructor(
-                    creation.Type.Name,
+                    NormalizeType(creation.Type, scope.UserTypes).Name,
                     creation.Arguments.Arguments.Count)
                         ? ConstructionKind.BuiltInValue
                         : ConstructionKind.Object
             },
             ConversionExpression conversion => conversion with
             {
+                Type = NormalizeType(conversion.Type, scope.UserTypes),
                 Value = NormalizeExpression(conversion.Value, scope)
             },
             SafeCastExpression cast => NormalizeCast(cast.Type, cast.Value, scope),
@@ -571,6 +631,7 @@ internal sealed class SemanticNormalizer
        Assignment targets are exempt, while their receivers and keys are validated normally. */
     private Expression NormalizeCast(TypeReference type, Expression value, BindingScope scope)
     {
+        type = NormalizeType(type, scope.UserTypes);
         if (language == ScriptLanguage.CSharp && value is InvocationExpression invocation
             && invocation.Target is MemberAccessExpression { Member: "AsGodotObject" } extraction
             && invocation.Arguments.Arguments.Count == 0)
@@ -597,6 +658,8 @@ internal sealed class SemanticNormalizer
     // Anonymous literals cannot establish a safe dictionary schema; declarations must supply it.
     private DictionaryExpression NormalizeDictionary(DictionaryExpression dictionary, BindingScope scope)
     {
+        if (dictionary.Type is not null)
+            dictionary = dictionary with { Type = NormalizeType(dictionary.Type, scope.UserTypes) };
         if (dictionary.Type?.Kind != TypeKind.Dictionary || dictionary.Type.TypeArguments.Count != 2)
             throw SourceLocations.Error(dictionary, "Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.");
         return dictionary with
@@ -637,10 +700,12 @@ internal sealed class SemanticNormalizer
             return new GodotStaticMethodExpression(staticMethod, arguments);
         if (language == ScriptLanguage.GdScript &&
             target is ValueExpression typeName &&
-            godotTypes.IsBuiltInValueConstructor(typeName.Text, arguments.Arguments.Count))
+            scope.Resolve(typeName.Text) is null && !scope.IsUserMethod(typeName.Text) && !scope.UserTypes.Contains(typeName.Text) &&
+            godotTypes.IsBuiltInValueConstructor(NormalizeType(new TypeReference(typeName.Text), scope.UserTypes).Name,
+                arguments.Arguments.Count))
         {
             return new ObjectCreationExpression(
-                new TypeReference(typeName.Text),
+                NormalizeType(new TypeReference(typeName.Text), scope.UserTypes),
                 arguments,
                 ConstructionKind.BuiltInValue);
         }
