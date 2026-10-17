@@ -2,6 +2,9 @@ class_name CollectionOperations
 extends RefCounted
 
 class CustomValue:
+	func getValues() -> CustomValue:
+		return self
+
 	func size() -> int:
 		return 4
 
@@ -57,3 +60,34 @@ func contains(values: Array[int], entries: Dictionary[String, int]) -> bool:
 
 func literalContains(value: int) -> bool:
 	return [1, 2, 3].has(value)
+
+func results() -> bool:
+	var values := getValues()
+	values.append(4)
+	var entries := self.getEntries()
+	var count := getValues().size()
+	var empty := getEntries(1).is_empty()
+	var explicitEmpty := self.getEntries().is_empty()
+	var shared := CollectionOperations.staticValues()
+	shared.append(5)
+	var value := getVariantEntries()["count"] as int
+	return entries.is_empty() and values.has(4)
+
+func customResult(source: CustomValue) -> int:
+	return source.getValues().size()
+
+static func staticCount() -> int:
+	return staticValues().size()
+
+# Providers follow their callers so result binding cannot depend on declaration order.
+func getValues() -> Array[int]:
+	return Values
+
+func getEntries(limit: int = 0) -> Dictionary[String, int]:
+	return Entries
+
+func getVariantEntries() -> Dictionary[String, Variant]:
+	return {"count": 1}
+
+static func staticValues() -> Array[int]:
+	return [6]

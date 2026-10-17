@@ -187,6 +187,7 @@ public sealed class GodotTypeCatalog
             KnownMember("Node3D", "GlobalPosition", "Vector3"),
             KnownMember("Aabb", "Position", "Vector3"),
             KnownMember("Aabb", "Size", "Vector3"),
+            KnownMember("Aabb", "End", "Vector3"),
             KnownMember("Polygon2D", "Polygon", "ArrayBuffer", new TypeReference("Vector2")),
             KnownMember("Line2D", "Points", "ArrayBuffer", new TypeReference("Vector2")),
             KnownMember("InputEventKey", "Pressed", "bool"),
@@ -219,6 +220,7 @@ public sealed class GodotTypeCatalog
         ],
         [
             KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void"),
+            KnownMethod("Aabb", "Aabb", "GetCenter", "get_center", 0, 0, "Vector3"),
             KnownMethod("Node", "Node", "GetParent", "get_parent", 0, 0, "Node"),
             KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
             KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string")

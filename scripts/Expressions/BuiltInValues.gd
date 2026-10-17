@@ -47,6 +47,11 @@ func castPosition(node: Node) -> Vector3:
 func incompatibleCast() -> bool:
 	return (RefCounted.new() as Node3D) == null
 
+func returnedBounds() -> Vector3:
+	var bounds := createBounds(Vector3.ZERO, Vector3(1.0, 2.0, 3.0))
+	var end := bounds.end
+	return bounds.get_center() + bounds.position + end
+
 func createBounds(position: Vector3, size: Vector3) -> AABB:
 	var value : AABB = AABB(position, size)
 	return value

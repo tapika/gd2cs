@@ -68,6 +68,13 @@ public partial class BuiltInValues : RefCounted
 		return (new RefCounted() as Node3D) == null;
 	}
 
+	public Vector3 returnedBounds()
+	{
+		var bounds = createBounds(Vector3.Zero, new Vector3(1.0f, 2.0f, 3.0f));
+		var end = bounds.End;
+		return bounds.GetCenter() + bounds.Position + end;
+	}
+
 	public Aabb createBounds(Vector3 position, Vector3 size)
 	{
 		Aabb value = new Aabb(position, size);

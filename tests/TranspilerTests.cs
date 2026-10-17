@@ -225,6 +225,37 @@ public sealed class TranspilerTests
         }
     }
 
+    [Fact]
+    public void RejectAmbiguousResult()
+    {
+        const string signature = "public Godot.Collections.Dictionary<string, int> getEntries(int limit = 0)";
+        var source = File.ReadAllText(Fixture("Expressions/CollectionOperations.cs")).Replace(signature,
+            "public Godot.Collections.Dictionary<string, int> getEntries(float limit = 0.0f)\n"
+            + "\t{\n\t\treturn Entries;\n\t}\n\n\t" + signature);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
+        Assert.Contains("overloaded script method 'getEntries'", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains("var entries = this.getEntries()", StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf("this.getEntries()", StringComparison.Ordinal) + 1, error.Column);
+    }
+
+    [Theory]
+    [InlineData(".gd", "getVariantEntries()[\"count\"] as int", "getVariantEntries()[\"count\"]")]
+    [InlineData(".gd", "getVariantEntries()[\"count\"] as int", "getVariantEntries().count")]
+    [InlineData(".cs", "getVariantEntries()[\"count\"].As<int>()", "getVariantEntries()[\"count\"]")]
+    public void RejectReturnedVariant(string extension, string original, string replacement)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/CollectionOperations" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("require an explicit cast", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Theory]
     [InlineData("PackedVector2Array", "Vector2")]
     [InlineData("PackedVector3Array", "Vector3")]

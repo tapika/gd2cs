@@ -89,7 +89,7 @@ internal sealed class SemanticNormalizer
                 signals.Add(signal.Name, signal);
         }
 
-        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType);
+        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType, declaration.Name);
         // Inference follows binding: constructors and static reads acquire their result
         // types from metadata. Resolve class-wide declarations before any method body.
         // Revisit forward dependencies until types stabilize, bounded by declaration count.
@@ -622,7 +622,7 @@ internal sealed class SemanticNormalizer
                     .ToList()
             },
             DictionaryExpression dictionary => NormalizeDictionary(dictionary, scope),
-            InvocationExpression invocation => NormalizeInvocation(invocation, scope),
+            InvocationExpression invocation => SourceLocations.Copy(invocation, NormalizeInvocation(invocation, scope)),
             SignalEmissionExpression signal => signal with { Arguments = NormalizeArguments(signal.Arguments, scope) },
             SignalConnectionExpression connection => connection with
             {
@@ -1227,6 +1227,7 @@ internal sealed class SemanticNormalizer
         SafeCastExpression cast => cast.Type,
         VariantCastExpression cast => cast.Type,
         ObjectCreationExpression creation => creation.Type,
+        InvocationExpression invocation => scope.ResolveCall(invocation),
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotStaticMethodExpression method => method.Method.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
@@ -1263,16 +1264,19 @@ internal sealed class SemanticNormalizer
             Dictionary<string, List<MethodDeclaration>> methods,
             Dictionary<string, SignalDeclaration> signals,
             HashSet<string> userTypes,
-            TypeReference currentInstanceType)
+            TypeReference currentInstanceType,
+            string className)
         {
             this.members = members;
             this.methods = methods;
             Signals = signals;
             UserTypes = userTypes;
             CurrentInstanceType = currentInstanceType;
+            ClassName = className;
         }
 
         public TypeReference CurrentInstanceType { get; }
+        public string ClassName { get; }
         public TypeReference? ReturnType { get; set; }
         public Dictionary<string, SignalDeclaration> Signals { get; }
         // Shared across callable scopes within one class; records the required native handler signatures.
@@ -1285,6 +1289,56 @@ internal sealed class SemanticNormalizer
         public bool HasCurrentInstance { get; set; }
 
         public bool IsUserMethod(string name) => methods.ContainsKey(name);
+
+        /* Ordinary invocations keep their source shape in the model. Bind their result from
+           the class-wide signature table, never by inspecting return statements. Signatures
+           are available before bodies, so forward calls and recursive methods work equally.
+           Locals/parameters/fields may shadow an unqualified method name. Only the current
+           instance or the current class's static methods are resolved here; arbitrary user
+           receivers require a separate class-symbol catalog and must not be guessed.
+           Arity includes optional parameters. For overloads, accept a unique exact argument
+           match; otherwise reject ambiguity instead of silently selecting the first result. */
+        public TypeReference? ResolveCall(InvocationExpression invocation)
+        {
+            string name;
+            bool? staticOnly;
+            switch (invocation.Target)
+            {
+                case ValueExpression target when Resolve(target.Text) is null:
+                    name = target.Text;
+                    staticOnly = HasCurrentInstance ? null : true;
+                    break;
+                case MemberAccessExpression { Target: CurrentInstanceExpression } member when HasCurrentInstance:
+                    name = member.Member;
+                    staticOnly = false;
+                    break;
+                case MemberAccessExpression { Target: ValueExpression owner } member
+                    when owner.Text == ClassName && Resolve(owner.Text) is null:
+                    name = member.Member;
+                    staticOnly = true;
+                    break;
+                default:
+                    return null;
+            }
+            if (!methods.TryGetValue(name, out var overloads))
+                return null;
+            var arguments = invocation.Arguments.Arguments;
+            var candidates = overloads.Where(method =>
+                (staticOnly is null || method.IsStatic == staticOnly)
+                && arguments.Count <= method.Parameters.Parameters.Count
+                && arguments.Count >= method.Parameters.Parameters.Count(parameter => parameter.DefaultValue is null)).ToList();
+            if (candidates.Count == 0)
+                return null;
+            if (candidates.Count == 1)
+                return candidates[0].ReturnType;
+            var types = arguments.Select(argument => ResolveType(argument.Value, this)).ToList();
+            var exact = candidates.Where(method => types.Select((type, index) =>
+                type is not null && SameHandlerType(type, method.Parameters.Parameters[index].Type)).All(match => match)).ToList();
+            if (exact.Count == 1)
+                return exact[0].ReturnType;
+            throw SourceLocations.Error(invocation,
+                $"Cannot resolve return type of overloaded script method '{name}'; use arguments with unambiguous types.");
+        }
 
         // Overloaded names need explicit disambiguation; never choose the first handler arbitrarily.
         public MethodDeclaration? FindHandler(string name) =>

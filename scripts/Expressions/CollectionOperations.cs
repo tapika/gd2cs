@@ -6,6 +6,11 @@ public partial class CollectionOperations : RefCounted
 {
 	public partial class CustomValue : RefCounted
 	{
+		public CustomValue getValues()
+		{
+			return this;
+		}
+
 		public int size()
 		{
 			return 4;
@@ -81,6 +86,51 @@ public partial class CollectionOperations : RefCounted
 	public bool literalContains(int value)
 	{
 		return gdArray(1, 2, 3).Contains(value);
+	}
+
+	public bool results()
+	{
+		var values = getValues();
+		values.Add(4);
+		var entries = this.getEntries();
+		var count = getValues().Count;
+		var empty = getEntries(1).Count == 0;
+		var explicitEmpty = this.getEntries().Count == 0;
+		var shared = CollectionOperations.staticValues();
+		shared.Add(5);
+		var value = getVariantEntries()["count"].As<int>();
+		return entries.Count == 0 && values.Contains(4);
+	}
+
+	public int customResult(CustomValue source)
+	{
+		return source.getValues().size();
+	}
+
+	public static int staticCount()
+	{
+		return staticValues().Count;
+	}
+
+	// Providers follow their callers so result binding cannot depend on declaration order.
+	public Godot.Collections.Array<int> getValues()
+	{
+		return Values;
+	}
+
+	public Godot.Collections.Dictionary<string, int> getEntries(int limit = 0)
+	{
+		return Entries;
+	}
+
+	public Godot.Collections.Dictionary<string, Variant> getVariantEntries()
+	{
+		return new Godot.Collections.Dictionary<string, Variant> {{ "count", 1 }};
+	}
+
+	public static Godot.Collections.Array<int> staticValues()
+	{
+		return gdArray(6);
 	}
 
 	private static Godot.Collections.Array<T> gdArray<[MustBeVariant] T>(params T[] values)
