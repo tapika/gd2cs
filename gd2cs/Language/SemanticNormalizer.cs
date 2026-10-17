@@ -736,6 +736,8 @@ internal sealed class SemanticNormalizer
             return emission;
         if (TryNormalizeOrdering(invocation, scope, out var ordering))
             return ordering;
+        if (TryNormalizeDictionaryArray(invocation, scope, out var dictionaryArray))
+            return dictionaryArray;
         Expression target;
         // A dictionary method call is not dictionary-dot key access (size() versus .size).
         if (invocation.Target is MemberAccessExpression calledMember
@@ -868,6 +870,47 @@ internal sealed class SemanticNormalizer
         }
         // Unknown and user-defined receivers retain their original callable structure.
         return invocation with { Target = target, Arguments = arguments };
+    }
+
+    /* A dictionary's values()/keys() call must bind before dot syntax becomes a key lookup.
+       Both dialects store one collection operation with an Array<T> result; C# helper
+       declarations/casts are implementation details and never enter the neutral model. */
+    private bool TryNormalizeDictionaryArray(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = invocation;
+        Expression receiver;
+        CollectionOperation operation;
+        ArgumentList arguments;
+        if (language == ScriptLanguage.CSharp && invocation.Target is ValueExpression helper
+            && CollectionMappings.TryDictionaryArrayHelper(helper.Text, out operation)
+            && !scope.IsUserMethod(helper.Text) && scope.Resolve(helper.Text) is null)
+        {
+            if (invocation.Arguments.Arguments.Count != 1)
+                throw SourceLocations.Error(invocation, helper.Text + " requires one typed dictionary argument.");
+            receiver = NormalizeExpression(invocation.Arguments.Arguments[0].Value, scope);
+            arguments = invocation.Arguments with { Arguments = new List<Argument>() };
+        }
+        else if (language == ScriptLanguage.GdScript && invocation.Target is MemberAccessExpression member
+            && member.Member is "keys" or "values")
+        {
+            receiver = NormalizeExpression(member.Target, scope);
+            if (ResolveType(receiver, scope)?.Kind != TypeKind.Dictionary)
+                return false;
+            operation = member.Member == "keys" ? CollectionOperation.Keys : CollectionOperation.Values;
+            if (invocation.Arguments.Arguments.Count != 0)
+                throw SourceLocations.Error(invocation, "Dictionary." + member.Member + "() takes no arguments.");
+            arguments = invocation.Arguments;
+        }
+        else
+            return false;
+        var type = ResolveType(receiver, scope);
+        if (type?.Kind != TypeKind.Dictionary || type.TypeArguments.Count != 2)
+            throw SourceLocations.Error(invocation, "Dictionary array helpers require a dictionary with explicit key and value types.");
+        var helperName = CollectionMappings.DictionaryArrayHelper(operation);
+        if (scope.IsUserMethod(helperName) || scope.Resolve(helperName) is not null)
+            throw SourceLocations.Error(invocation, "Dictionary array extraction reserves the generated helper name '" + helperName + "'; rename the conflicting member.");
+        result = new CollectionOperationExpression(receiver, operation, arguments);
+        return true;
     }
 
     /* Custom sorting mutates the same array in both dialects. GDScript's comparator is
@@ -1392,8 +1435,7 @@ internal sealed class SemanticNormalizer
         GodotMemberAccessExpression member => member.Member.ResultType,
         GodotStaticMemberExpression member => member.Member.ResultType,
         GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
-        CollectionOperationExpression { Operation: CollectionOperation.Count or CollectionOperation.IndexOf } => new TypeReference("int"),
-        CollectionOperationExpression { Operation: CollectionOperation.IsEmpty or CollectionOperation.ContainsValue or CollectionOperation.ContainsKey } => new TypeReference("bool"),
+        CollectionOperationExpression collection => CollectionMappings.ResultType(collection.Operation, ResolveType(collection.Target, scope)),
         ParenthesizedExpression parenthesized => ResolveType(parenthesized.Expression, scope),
         _ => null
     };

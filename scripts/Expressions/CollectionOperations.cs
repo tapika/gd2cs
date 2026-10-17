@@ -11,6 +11,16 @@ public partial class CollectionOperations : RefCounted
 			return this;
 		}
 
+		public CustomValue values()
+		{
+			return this;
+		}
+
+		public CustomValue keys()
+		{
+			return this;
+		}
+
 		public int size()
 		{
 			return 4;
@@ -107,6 +117,36 @@ public partial class CollectionOperations : RefCounted
 		return source.getValues().size();
 	}
 
+	public void dictionaryArrays(Godot.Collections.Dictionary<int, Vector2> points)
+	{
+		var values = gdDictValues(points);
+		var keys = gdDictKeys(points);
+		var first = values[0];
+		var component = first.X;
+		var key = keys[0];
+		var count = gdDictKeys(points).Count;
+		var distance = gdDictValues(points)[0].DistanceTo(gdDictValues(points)[1]);
+		foreach (var point in gdDictValues(points))
+		{
+			component = point.Y;
+		}
+		var names = gdDictKeys(Entries);
+		var valueKey = Entries["values"];
+		var keyKey = Entries["keys"];
+		var returned = gdDictValues(getEntries());
+		var custom = Custom.values().keys();
+	}
+
+	public Godot.Collections.Array<string> entryKeys()
+	{
+		return gdDictKeys(Entries);
+	}
+
+	public Godot.Collections.Array<int> entryValues()
+	{
+		return gdDictValues(Entries);
+	}
+
 	public static int staticCount()
 	{
 		return staticValues().Count;
@@ -138,5 +178,19 @@ public partial class CollectionOperations : RefCounted
 		var result = new Godot.Collections.Array<T>();
 		foreach (var value in values) result.Add(value);
 		return result;
+	}
+
+	private static Godot.Collections.Array<TKey> gdDictKeys<[MustBeVariant] TKey, [MustBeVariant] TValue>(Godot.Collections.Dictionary<TKey, TValue> dictionary)
+	{
+		// Godot internally returns Array<T> from Keys/Values, exposed as ICollection<T>.
+		// https://github.com/godotengine/godot/blob/master/modules/mono/glue/GodotSharp/GodotSharp/Core/Dictionary.cs
+		return (Godot.Collections.Array<TKey>)dictionary.Keys;
+	}
+
+	private static Godot.Collections.Array<TValue> gdDictValues<[MustBeVariant] TKey, [MustBeVariant] TValue>(Godot.Collections.Dictionary<TKey, TValue> dictionary)
+	{
+		// Godot internally returns Array<T> from Keys/Values, exposed as ICollection<T>.
+		// https://github.com/godotengine/godot/blob/master/modules/mono/glue/GodotSharp/GodotSharp/Core/Dictionary.cs
+		return (Godot.Collections.Array<TValue>)dictionary.Values;
 	}
 }

@@ -5,6 +5,12 @@ class CustomValue:
 	func getValues() -> CustomValue:
 		return self
 
+	func values() -> CustomValue:
+		return self
+
+	func keys() -> CustomValue:
+		return self
+
 	func size() -> int:
 		return 4
 
@@ -75,6 +81,28 @@ func results() -> bool:
 
 func customResult(source: CustomValue) -> int:
 	return source.getValues().size()
+
+func dictionaryArrays(points: Dictionary[int, Vector2]):
+	var values := points.values()
+	var keys := points.keys()
+	var first : Vector2 = values[0]
+	var component := first.x
+	var key : int = keys[0]
+	var count := points.keys().size()
+	var distance := points.values()[0].distance_to(points.values()[1])
+	for point in points.values():
+		component = point.y
+	var names := Entries.keys()
+	var valueKey : int = Entries["values"]
+	var keyKey : int = Entries["keys"]
+	var returned := getEntries().values()
+	var custom := Custom.values().keys()
+
+func entryKeys() -> Array[String]:
+	return Entries.keys()
+
+func entryValues() -> Array[int]:
+	return Entries.values()
 
 static func staticCount() -> int:
 	return staticValues().size()

@@ -222,6 +222,7 @@ public sealed class GodotTypeCatalog
             KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void"),
             KnownMethod("Aabb", "Aabb", "GetCenter", "get_center", 0, 0, "Vector3"),
             KnownMethod("Node", "Node", "GetParent", "get_parent", 0, 0, "Node"),
+            KnownMethod("Vector2", "Vector2", "DistanceTo", "distance_to", 1, 1, "float"),
             KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
             KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string")
         ],

@@ -30,7 +30,9 @@ internal static class CollectionMappings
         new(TypeKind.Dictionary, CollectionOperation.ContainsKey, "has", "ContainsKey", 1),
         new(TypeKind.Array, CollectionOperation.Sort, "sort", "Sort", 0),
         new(TypeKind.Array, CollectionOperation.Reverse, "reverse", "Reverse", 0),
-        new(TypeKind.Array, CollectionOperation.Shuffle, "shuffle", "Shuffle", 0)
+        new(TypeKind.Array, CollectionOperation.Shuffle, "shuffle", "Shuffle", 0),
+        new(TypeKind.Dictionary, CollectionOperation.Keys, "keys", "", 0),
+        new(TypeKind.Dictionary, CollectionOperation.Values, "values", "", 0)
     ];
 
     public static bool TryInvocation(
@@ -83,6 +85,35 @@ internal static class CollectionMappings
 
     public static string CSharpMember(CollectionOperation operation) =>
         mappings.First(mapping => mapping.Operation == operation).CSharpMember;
+
+    public static string DictionaryArrayHelper(CollectionOperation operation) => operation switch
+    {
+        CollectionOperation.Keys => "gdDictKeys",
+        CollectionOperation.Values => "gdDictValues",
+        _ => throw new ArgumentException("Not a dictionary array operation.", nameof(operation))
+    };
+
+    public static bool TryDictionaryArrayHelper(string name, out CollectionOperation operation)
+    {
+        operation = name == "gdDictKeys" ? CollectionOperation.Keys : CollectionOperation.Values;
+        return name is "gdDictKeys" or "gdDictValues";
+    }
+
+    // Dictionary key/value generic arguments determine the array's element type and downstream indexing.
+    public static TypeReference? ResultType(CollectionOperation operation, TypeReference? receiverType)
+    {
+        if (operation is CollectionOperation.Count or CollectionOperation.IndexOf)
+            return new TypeReference("int");
+        if (operation is CollectionOperation.IsEmpty or CollectionOperation.ContainsValue or CollectionOperation.ContainsKey)
+            return new TypeReference("bool");
+        if (operation is CollectionOperation.Keys or CollectionOperation.Values
+            && receiverType?.Kind == TypeKind.Dictionary && receiverType.TypeArguments.Count == 2)
+        {
+            var element = receiverType.TypeArguments[operation == CollectionOperation.Keys ? 0 : 1];
+            return new TypeReference("Array", new List<TypeReference> { element });
+        }
+        return null;
+    }
 
     // Recognize unsupported overloads as well, so they cannot leak unchanged into the other dialect.
     public static bool IsOrderingMember(ScriptLanguage language, string member) => language == ScriptLanguage.GdScript

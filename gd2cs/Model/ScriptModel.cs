@@ -280,7 +280,10 @@ public enum CollectionOperation
     ContainsKey,
     Sort,
     Reverse,
-    Shuffle
+    Shuffle,
+    // Return typed, indexable snapshot arrays rather than dictionary-dot key lookups.
+    Keys,
+    Values
 }
 
 // Preserves line breaks before individual arguments and before the closing parenthesis.

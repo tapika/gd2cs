@@ -12,6 +12,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private bool requiresCallableValidity;
     private bool requiresArrayBuffers;
     private bool requiresCustomSort;
+    private readonly HashSet<CollectionOperation> dictionaryArrayHelpers = new();
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
     private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
     private HashSet<string> occupiedNames = new(StringComparer.Ordinal);
@@ -27,6 +28,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         requiresCallableValidity = false;
         requiresArrayBuffers = false;
         requiresCustomSort = false;
+        dictionaryArrayHelpers.Clear();
         patternNames.Clear();
         occupiedNames = EventParameterConversions.Names(model.Elements);
         var output = new StringBuilder();
@@ -126,6 +128,9 @@ public sealed class CSharpEmitter : IScriptEmitter
             EmitCallableValidityHelper(output, indent);
         if (isRoot && requiresCustomSort)
             EmitCustomSortHelper(output, indent);
+        if (isRoot)
+            foreach (var operation in dictionaryArrayHelpers.Order())
+                EmitDictionaryArrayHelper(output, operation, indent);
         output.AppendLine(indent + "}");
     }
 
@@ -578,6 +583,16 @@ public sealed class CSharpEmitter : IScriptEmitter
         CollectionOperationExpression expression,
         string indent)
     {
+        if (expression.Operation is CollectionOperation.Keys or CollectionOperation.Values)
+        {
+            dictionaryArrayHelpers.Add(expression.Operation);
+            output.Append(CollectionMappings.DictionaryArrayHelper(expression.Operation));
+            EmitArguments(output, expression.Arguments with
+            {
+                Arguments = new List<Argument> { new(expression.Target, false) }
+            }, indent);
+            return;
+        }
         EmitExpression(output, expression.Target, indent);
         if (expression.Operation == CollectionOperation.Count)
         {
@@ -878,6 +893,28 @@ public sealed class CSharpEmitter : IScriptEmitter
             return;
         output.AppendLine(indent + "else");
         EmitBlock(output, statement.ElseElements, indent);
+    }
+
+    // The concrete Array<T> cast preserves Godot's snapshot without an additional allocation/copy.
+    private static void EmitDictionaryArrayHelper(StringBuilder output, CollectionOperation operation, string indent)
+    {
+        var element = operation == CollectionOperation.Keys ? "TKey" : "TValue";
+        var property = operation == CollectionOperation.Keys ? "Keys" : "Values";
+        output.AppendLine();
+        output.Append(indent + "    private static Godot.Collections.Array<");
+        output.Append(element);
+        output.Append("> ");
+        output.Append(CollectionMappings.DictionaryArrayHelper(operation));
+        output.AppendLine("<[MustBeVariant] TKey, [MustBeVariant] TValue>(Godot.Collections.Dictionary<TKey, TValue> dictionary)");
+        output.AppendLine(indent + "    {");
+        output.AppendLine(indent + "        // Godot internally returns Array<T> from Keys/Values, exposed as ICollection<T>.");
+        output.AppendLine(indent + "        // https://github.com/godotengine/godot/blob/master/modules/mono/glue/GodotSharp/GodotSharp/Core/Dictionary.cs");
+        output.Append(indent + "        return (Godot.Collections.Array<");
+        output.Append(element);
+        output.Append(">)dictionary.");
+        output.Append(property);
+        output.AppendLine(";");
+        output.AppendLine(indent + "    }");
     }
 
     // IList<T> is implemented by Godot Array<T>; using it avoids additional Variant generic constraints.

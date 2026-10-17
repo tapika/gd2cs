@@ -477,7 +477,7 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(TokenKind.CloseParenthesis);
         }
         else
-            ParseGdArrayHelperSignature();
+            ParseArrayHelperSignature();
         EndOfLine();
         tokens.Expect(TokenKind.OpenBrace);
         var depth = 1;
@@ -494,23 +494,44 @@ public sealed class CSharpParser : IScriptParser
         EndOfLine(optional: true);
     }
 
-    private void ParseGdArrayHelperSignature()
+    // Array construction and dictionary extraction helpers differ only in their reserved signatures.
+    private void ParseArrayHelperSignature()
     {
         _ = ParseType();
-        tokens.Expect(TokenKind.Identifier, "gdArray");
+        var helper = tokens.Expect(TokenKind.Identifier);
+        if (helper.Text != "gdArray" && helper.Text is not ("gdDictKeys" or "gdDictValues"))
+            throw new ParseException("Unsupported generated array helper.", helper.Line, helper.Column);
         tokens.Expect(TokenKind.LessThan);
+        ParseVariantParameter(helper.Text == "gdArray" ? "T" : "TKey");
+        if (helper.Text != "gdArray")
+        {
+            tokens.Expect(TokenKind.Comma);
+            ParseVariantParameter("TValue");
+        }
+        tokens.Expect(TokenKind.GreaterThan);
+        tokens.Expect(TokenKind.OpenParenthesis);
+        if (helper.Text != "gdArray")
+        {
+            _ = ParseType();
+            tokens.Expect(TokenKind.Identifier, "dictionary");
+        }
+        else
+        {
+            tokens.Expect(TokenKind.Identifier, "params");
+            tokens.Expect(TokenKind.Identifier, "T");
+            tokens.Expect(TokenKind.OpenBracket);
+            tokens.Expect(TokenKind.CloseBracket);
+            tokens.Expect(TokenKind.Identifier, "values");
+        }
+        tokens.Expect(TokenKind.CloseParenthesis);
+    }
+
+    private void ParseVariantParameter(string name)
+    {
         tokens.Expect(TokenKind.OpenBracket);
         tokens.Expect(TokenKind.Identifier, "MustBeVariant");
         tokens.Expect(TokenKind.CloseBracket);
-        tokens.Expect(TokenKind.Identifier, "T");
-        tokens.Expect(TokenKind.GreaterThan);
-        tokens.Expect(TokenKind.OpenParenthesis);
-        tokens.Expect(TokenKind.Identifier, "params");
-        tokens.Expect(TokenKind.Identifier, "T");
-        tokens.Expect(TokenKind.OpenBracket);
-        tokens.Expect(TokenKind.CloseBracket);
-        tokens.Expect(TokenKind.Identifier, "values");
-        tokens.Expect(TokenKind.CloseParenthesis);
+        tokens.Expect(TokenKind.Identifier, name);
     }
 
     private ArrayExpression ParseArray()
