@@ -8,11 +8,13 @@ public sealed class GdScriptParser : IScriptParser
 {
     private TokenReader tokens = null!;
     private int groupingDepth;
+    private int expressionOwnerColumn = 1;
 
     public ScriptModel Parse(string source)
     {
         tokens = new TokenReader(new Lexer(source, true));
         groupingDepth = 0;
+        expressionOwnerColumn = 1;
         var elements = new List<SyntaxElement>();
         while (ParseTrivia(elements))
         {
@@ -60,6 +62,7 @@ public sealed class GdScriptParser : IScriptParser
             }
 
             var column = tokens.Current.Column;
+            expressionOwnerColumn = column;
             var isStatic = tokens.TryConsume(TokenKind.Identifier, "static");
             var kind = tokens.Expect(TokenKind.Identifier).Text;
             if (kind == "signal")
@@ -146,6 +149,7 @@ public sealed class GdScriptParser : IScriptParser
             }
             var statementToken = tokens.Current;
             var statementColumn = statementToken.Column;
+            expressionOwnerColumn = statementColumn;
             if (tokens.Current.Text == "for")
             {
                 elements.Add(ParseForEach(statementColumn));
@@ -553,6 +557,14 @@ public sealed class GdScriptParser : IScriptParser
 
     private Expression ParsePrimaryExpression()
     {
+        // The owning statement's indentation, not the inline func column, bounds a lambda body.
+        if (tokens.Current.Text == "func")
+        {
+            var ownerColumn = expressionOwnerColumn;
+            var lambda = ParseLambda(ownerColumn);
+            expressionOwnerColumn = ownerColumn;
+            return lambda;
+        }
         if (tokens.Current.Kind == TokenKind.OpenBrace)
             return ParseDictionary();
         if (tokens.Current.Text == "func")
@@ -686,10 +698,12 @@ public sealed class GdScriptParser : IScriptParser
             return new ArgumentList(arguments, startsOnNewLine);
         while (true)
         {
-            arguments.Add(new Argument(ParseExpression(), startsOnNewLine));
+            var value = ParseExpression();
+            arguments.Add(new Argument(value, startsOnNewLine));
             if (!tokens.TryConsume(TokenKind.Comma))
             {
-                var closingOnNewLine = tokens.TryConsume(TokenKind.NewLine);
+                // A multiline lambda body consumes its final newline before returning here.
+                var closingOnNewLine = tokens.TryConsume(TokenKind.NewLine) || value is LambdaExpression { IsInline: false };
                 tokens.Expect(TokenKind.CloseParenthesis);
                 return new ArgumentList(arguments, closingOnNewLine);
             }

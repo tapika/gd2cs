@@ -27,7 +27,10 @@ internal static class CollectionMappings
         new(TypeKind.Array, CollectionOperation.IndexOf, "find", "IndexOf", 2),
         new(TypeKind.Dictionary, CollectionOperation.RemoveKey, "erase", "Remove", 1),
         new(TypeKind.Array, CollectionOperation.ContainsValue, "has", "Contains", 1),
-        new(TypeKind.Dictionary, CollectionOperation.ContainsKey, "has", "ContainsKey", 1)
+        new(TypeKind.Dictionary, CollectionOperation.ContainsKey, "has", "ContainsKey", 1),
+        new(TypeKind.Array, CollectionOperation.Sort, "sort", "Sort", 0),
+        new(TypeKind.Array, CollectionOperation.Reverse, "reverse", "Reverse", 0),
+        new(TypeKind.Array, CollectionOperation.Shuffle, "shuffle", "Shuffle", 0)
     ];
 
     public static bool TryInvocation(
@@ -80,4 +83,10 @@ internal static class CollectionMappings
 
     public static string CSharpMember(CollectionOperation operation) =>
         mappings.First(mapping => mapping.Operation == operation).CSharpMember;
+
+    // Recognize unsupported overloads as well, so they cannot leak unchanged into the other dialect.
+    public static bool IsOrderingMember(ScriptLanguage language, string member) => language == ScriptLanguage.GdScript
+        ? member is "sort" or "sort_custom" or "reverse" or "shuffle" or "bsearch_custom"
+        : member is "Sort" or "SortCustom" or "Reverse" or "Shuffle"
+            or "OrderBy" or "OrderByDescending" or "ThenBy" or "ThenByDescending";
 }

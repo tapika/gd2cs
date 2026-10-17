@@ -734,6 +734,8 @@ internal sealed class SemanticNormalizer
             return connection;
         if (TryNormalizeSignalEmission(invocation, scope, out var emission))
             return emission;
+        if (TryNormalizeOrdering(invocation, scope, out var ordering))
+            return ordering;
         Expression target;
         // A dictionary method call is not dictionary-dot key access (size() versus .size).
         if (invocation.Target is MemberAccessExpression calledMember
@@ -866,6 +868,103 @@ internal sealed class SemanticNormalizer
         }
         // Unknown and user-defined receivers retain their original callable structure.
         return invocation with { Target = target, Arguments = arguments };
+    }
+
+    /* Custom sorting mutates the same array in both dialects. GDScript's comparator is
+       a Boolean predicate, not .NET's signed Comparison<T>. Bind its signature here;
+       the C# helper adapts that predicate and writes back without replacing the array.
+       Only named methods and inline typed lambdas have checkable signatures for now.
+       Sorting is unstable in both implementations; equal-key order is not guaranteed,
+       and predicates must be pure, consistent strict orderings. */
+    private bool TryNormalizeOrdering(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = invocation;
+        if (language == ScriptLanguage.CSharp && invocation.Target is ValueExpression { Text: "gdSortCustom" }
+            && !scope.IsUserMethod("gdSortCustom") && scope.Resolve("gdSortCustom") is null)
+        {
+            if (invocation.Arguments.Arguments.Count != 2)
+                throw SourceLocations.Error(invocation, "gdSortCustom requires an array and a Boolean comparator.");
+            var target = NormalizeExpression(invocation.Arguments.Arguments[0].Value, scope);
+            var arguments = invocation.Arguments with { Arguments = invocation.Arguments.Arguments.Skip(1).ToList() };
+            result = NormalizeCustomSort(target, ResolveType(target, scope), arguments, invocation, scope);
+            return true;
+        }
+        if (invocation.Target is not MemberAccessExpression member
+            || !CollectionMappings.IsOrderingMember(language, member.Member))
+            return false;
+        var receiver = NormalizeExpression(member.Target, scope);
+        var type = ResolveType(receiver, scope);
+        // Unrelated user classes may legitimately expose methods with these names.
+        if (type?.Kind is not (TypeKind.Array or TypeKind.Dictionary or TypeKind.ArrayBuffer))
+            return false;
+        if (language == ScriptLanguage.GdScript && member.Member == "sort_custom")
+        {
+            result = NormalizeCustomSort(receiver, type, invocation.Arguments, invocation, scope);
+            return true;
+        }
+        if (type.Kind == TypeKind.Array && CollectionMappings.TryInvocation(language, type.Kind, member.Member,
+            invocation.Arguments.Arguments.Count, out var operation))
+        {
+            result = new CollectionOperationExpression(receiver, operation, NormalizeArguments(invocation.Arguments, scope));
+            return true;
+        }
+        throw SourceLocations.Error(invocation,
+            $"Unsupported collection ordering operation '{member.Member}'. Use Array.sort()/Sort(), reverse()/Reverse(), shuffle()/Shuffle(), or sort_custom()/gdSortCustom(array, predicate) with a typed Boolean comparator.");
+    }
+
+    private CustomSortExpression NormalizeCustomSort(Expression target, TypeReference? type,
+        ArgumentList arguments, InvocationExpression invocation, BindingScope scope)
+    {
+        if (type?.Kind != TypeKind.Array || type.TypeArguments.Count != 1 || arguments.Arguments.Count != 1)
+            throw SourceLocations.Error(invocation, "Custom sorting requires a typed Array and one Boolean comparator.");
+        // The generated helper must not hide a user method or field with the same name.
+        if (scope.IsUserMethod("gdSortCustom") || scope.Resolve("gdSortCustom") is not null)
+            throw SourceLocations.Error(invocation, "Custom sorting reserves the generated helper name 'gdSortCustom'; rename the conflicting member.");
+        var elementType = type.TypeArguments[0];
+        var predicate = arguments.Arguments[0].Value;
+        if (predicate is LambdaExpression lambda)
+        {
+            // A raw C# lambda gets its return type from Func<T,T,bool>; the parser has no such context.
+            if (language == ScriptLanguage.CSharp && lambda.ReturnType.Kind == TypeKind.Void)
+            {
+                lambda = lambda with
+                {
+                    ReturnType = new TypeReference("bool"),
+                    Elements = lambda.IsInline && lambda.Elements is [ExpressionStatement expression]
+                        ? new List<SyntaxElement> { new ReturnStatement(expression.Expression) } : lambda.Elements
+                };
+            }
+            if (lambda.ReturnType.Kind != TypeKind.Bool || lambda.Parameters.Parameters.Count != 2
+                || lambda.Parameters.Parameters.Any(parameter => parameter.DefaultValue is not null
+                    || !SameHandlerType(NormalizeType(parameter.Type, scope.UserTypes), elementType)))
+                throw SourceLocations.Error(invocation, "Sort comparator must take two array-element parameters and return bool.");
+            predicate = NormalizeExpression(lambda, scope);
+        }
+        else
+        {
+            var name = predicate switch
+            {
+                ValueExpression value when scope.Resolve(value.Text) is null => value.Text,
+                MemberAccessExpression { Target: CurrentInstanceExpression } member when scope.HasCurrentInstance => member.Member,
+                MemberAccessExpression { Target: ValueExpression owner } member
+                    when owner.Text == scope.ClassName && scope.Resolve(owner.Text) is null => member.Member,
+                _ => null
+            };
+            var method = name is null ? null : scope.FindHandler(name);
+            var classQualified = predicate is MemberAccessExpression { Target: ValueExpression qualifier }
+                && qualifier.Text == scope.ClassName;
+            if (method is null || (!scope.HasCurrentInstance && !method.IsStatic) || (classQualified && !method.IsStatic))
+                throw SourceLocations.Error(invocation, "Custom sorting requires an unambiguous named Boolean method or a typed inline lambda; opaque Callable comparators are not supported.");
+            if (method.ReturnType.Kind != TypeKind.Bool || method.Parameters.Parameters.Count != 2
+                || method.Parameters.Parameters.Any(parameter => parameter.DefaultValue is not null
+                    || !SameHandlerType(parameter.Type, elementType)))
+                throw SourceLocations.Error(invocation, "Sort comparator must take two array-element parameters and return bool.");
+            predicate = NormalizeExpression(predicate, scope);
+        }
+        return new CustomSortExpression(target, elementType, arguments with
+        {
+            Arguments = new List<Argument> { arguments.Arguments[0] with { Value = predicate } }
+        });
     }
 
     /* Clamp's typed GDScript variants and C# overloads share one model operation. Resolve

@@ -482,6 +482,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 });
                 EmitArguments(output, clamp.Arguments, indent);
                 break;
+            case CustomSortExpression sort:
+                EmitExpression(output, sort.Target, indent);
+                output.Append(".sort_custom");
+                EmitArguments(output, sort.Arguments, indent);
+                break;
             case GodotStaticMethodExpression method:
                 output.Append(godotTypes.StaticMethodName(method.Method, ScriptLanguage.GdScript));
                 EmitArguments(output, method.Arguments, indent);

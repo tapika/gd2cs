@@ -462,6 +462,20 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(TokenKind.Identifier, "callback");
             tokens.Expect(TokenKind.CloseParenthesis);
         }
+        else if (tokens.TryConsume(TokenKind.Identifier, "void"))
+        {
+            tokens.Expect(TokenKind.Identifier, "gdSortCustom");
+            tokens.Expect(TokenKind.LessThan);
+            tokens.Expect(TokenKind.Identifier, "T");
+            tokens.Expect(TokenKind.GreaterThan);
+            tokens.Expect(TokenKind.OpenParenthesis);
+            _ = ParseType();
+            tokens.Expect(TokenKind.Identifier, "values");
+            tokens.Expect(TokenKind.Comma);
+            _ = ParseType();
+            tokens.Expect(TokenKind.Identifier, "before");
+            tokens.Expect(TokenKind.CloseParenthesis);
+        }
         else
             ParseGdArrayHelperSignature();
         EndOfLine();
@@ -764,7 +778,8 @@ public sealed class CSharpParser : IScriptParser
         var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
         while (tokens.Current.Kind != TokenKind.CloseParenthesis)
         {
-            var type = tokens.Peek.Kind == TokenKind.Identifier
+            // Qualified/generic element types are explicit lambda parameter types too.
+            var type = tokens.Peek.Kind is TokenKind.Identifier or TokenKind.Dot or TokenKind.LessThan or TokenKind.OpenBracket
                 ? ParseType()
                 : types.ElementAtOrDefault(parameters.Count)
                     ?? throw new ParseException("Lambda parameter requires a type", tokens.Current.Line, tokens.Current.Column);

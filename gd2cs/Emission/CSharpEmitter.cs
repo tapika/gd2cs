@@ -11,6 +11,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private bool requiresGdArray;
     private bool requiresCallableValidity;
     private bool requiresArrayBuffers;
+    private bool requiresCustomSort;
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
     private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
     private HashSet<string> occupiedNames = new(StringComparer.Ordinal);
@@ -25,6 +26,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         requiresGdArray = false;
         requiresCallableValidity = false;
         requiresArrayBuffers = false;
+        requiresCustomSort = false;
         patternNames.Clear();
         occupiedNames = EventParameterConversions.Names(model.Elements);
         var output = new StringBuilder();
@@ -122,6 +124,8 @@ public sealed class CSharpEmitter : IScriptEmitter
             EmitGdArrayHelper(output, indent);
         if (isRoot && requiresCallableValidity)
             EmitCallableValidityHelper(output, indent);
+        if (isRoot && requiresCustomSort)
+            EmitCustomSortHelper(output, indent);
         output.AppendLine(indent + "}");
     }
 
@@ -291,6 +295,11 @@ public sealed class CSharpEmitter : IScriptEmitter
             case ClampExpression clamp:
                 output.Append(MathFunctionNames.ToCSharp("clamp"));
                 EmitArguments(output, clamp.Arguments, indent);
+                break;
+            case CustomSortExpression sort:
+                requiresCustomSort = true;
+                output.Append("gdSortCustom");
+                EmitSortArguments(output, sort, indent);
                 break;
             case GodotStaticMethodExpression method:
                 output.Append(godotTypes.StaticMethodName(method.Method, ScriptLanguage.CSharp));
@@ -535,6 +544,32 @@ public sealed class CSharpEmitter : IScriptEmitter
             return;
         }
         EmitExpression(output, target, indent);
+    }
+
+    // Named predicates remain method groups; lambda predicates are Func delegates, not Godot Callables.
+    private void EmitSortArguments(StringBuilder output, CustomSortExpression sort, string indent)
+    {
+        output.Append('(');
+        EmitExpression(output, sort.Target, indent);
+        output.Append(',');
+        var argument = sort.Arguments.Arguments.Single();
+        if (argument.StartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent + "    ");
+        }
+        else
+            output.Append(' ');
+        if (argument.Value is LambdaExpression lambda)
+            EmitLambda(output, lambda, indent, asCallable: false);
+        else
+            EmitExpression(output, argument.Value, indent);
+        if (sort.Arguments.ClosingParenthesisStartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent);
+        }
+        output.Append(')');
     }
 
     // Collection operations are already type-bound, so emission is a dialect-only decision.
@@ -843,6 +878,23 @@ public sealed class CSharpEmitter : IScriptEmitter
             return;
         output.AppendLine(indent + "else");
         EmitBlock(output, statement.ElseElements, indent);
+    }
+
+    // IList<T> is implemented by Godot Array<T>; using it avoids additional Variant generic constraints.
+    private static void EmitCustomSortHelper(StringBuilder output, string indent)
+    {
+        output.AppendLine();
+        output.AppendLine(indent + "    private static void gdSortCustom<T>(System.Collections.Generic.IList<T> values, Func<T, T, bool> before)");
+        output.AppendLine(indent + "    {");
+        output.AppendLine(indent + "        // Godot's C# Array API is missing GDScript's sort_custom function.");
+        output.AppendLine(indent + "        // Adapt its strict Boolean ordering; equal-key order is not guaranteed.");
+        output.AppendLine(indent + "        ArgumentNullException.ThrowIfNull(before);");
+        output.AppendLine(indent + "        if (values.IsReadOnly) throw new InvalidOperationException(\"The array is read-only.\");");
+        output.AppendLine(indent + "        var sorted = new System.Collections.Generic.List<T>(values);");
+        output.AppendLine(indent + "        sorted.Sort((first, second) => before(first, second) ? -1 : before(second, first) ? 1 : 0);");
+        output.AppendLine(indent + "        // Write back into the same array so aliases still observe the sorted contents.");
+        output.AppendLine(indent + "        for (var index = 0; index < sorted.Count; index++) values[index] = sorted[index];");
+        output.AppendLine(indent + "    }");
     }
 
     private static void EmitGdArrayHelper(StringBuilder output, string indent)

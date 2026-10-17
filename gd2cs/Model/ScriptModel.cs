@@ -259,6 +259,10 @@ public sealed record CollectionOperationExpression(
     CollectionOperation Operation,
     ArgumentList Arguments) : Expression;
 
+// Sorts the existing array by a typed Boolean "comes before" predicate, not a three-way comparer.
+// Arguments retains callback/closing-delimiter layout; ElementType binds both predicate parameters.
+public sealed record CustomSortExpression(Expression Target, TypeReference ElementType, ArgumentList Arguments) : Expression;
+
 // Distinguishes operations whose source spelling depends on both language and collection kind.
 public enum CollectionOperation
 {
@@ -273,7 +277,10 @@ public enum CollectionOperation
     IndexOf,
     RemoveKey,
     ContainsValue,
-    ContainsKey
+    ContainsKey,
+    Sort,
+    Reverse,
+    Shuffle
 }
 
 // Preserves line breaks before individual arguments and before the closing parenthesis.
