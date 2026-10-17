@@ -67,6 +67,24 @@ public partial class ControlFlow : RefCounted
 		value = value;
 	}
 
+	public void iterate(Callable callback)
+	{
+		foreach (Node node in callback.Call().As<Godot.Collections.Array<Node>>())
+		{
+			node.GetParent();
+		}
+
+		var entries = callback.Call().As<Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>>>();
+		foreach (Godot.Collections.Dictionary<string, Variant> entry in entries)
+		{
+			accept(entry["count"].As<int>());
+		}
+		foreach (var entry in entries)
+		{
+			accept(entry["count"].As<int>());
+		}
+	}
+
 	public void inspectInput(InputEvent @event, bool enabled)
 	{
 		// Reserve the first generated pattern name to test collision handling.

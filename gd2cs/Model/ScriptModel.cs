@@ -437,11 +437,12 @@ public enum LocalTyping
     Explicit
 }
 
-// Iterates over a collection while preserving the ordered nested body.
+// A null VariableType preserves inferred iteration (C# var); an explicit type binds the body.
 public sealed record ForEachStatement(
     string Variable,
     Expression Collection,
-    List<SyntaxElement> Elements) : Statement;
+    List<SyntaxElement> Elements,
+    TypeReference? VariableType = null) : Statement;
 
 // Repeats an ordered body while its condition remains true.
 public sealed record WhileStatement(

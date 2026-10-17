@@ -309,12 +309,12 @@ public sealed class CSharpParser : IScriptParser
     {
         tokens.Expect(TokenKind.Identifier, "foreach");
         tokens.Expect(TokenKind.OpenParenthesis);
-        tokens.Expect(TokenKind.Identifier, "var");
+        var type = tokens.TryConsume(TokenKind.Identifier, "var") ? null : ParseType();
         var variable = tokens.Expect(TokenKind.Identifier).Text;
         tokens.Expect(TokenKind.Identifier, "in");
         var collection = ParseExpression();
         tokens.Expect(TokenKind.CloseParenthesis);
-        return new ForEachStatement(variable, collection, ParseBracedBody());
+        return new ForEachStatement(variable, collection, ParseBracedBody(), type);
     }
 
     private WhileStatement ParseWhile()

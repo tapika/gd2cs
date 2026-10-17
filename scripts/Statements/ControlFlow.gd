@@ -34,6 +34,16 @@ func process(values: Array[int], enabled: bool):
 func accept(value: int):
 	value = value
 
+func iterate(callback: Callable):
+	for node: Node in callback.call() as Array[Node]:
+		node.get_parent()
+
+	var entries := callback.call() as Array[Dictionary] #[String, Variant]
+	for entry: Dictionary[String, Variant] in entries:
+		accept(entry["count"] as int)
+	for entry in entries:
+		accept(entry["count"] as int)
+
 func inspectInput(event: InputEvent, enabled: bool):
 	# Reserve the first generated pattern name to test collision handling.
 	var eventTyped := 0

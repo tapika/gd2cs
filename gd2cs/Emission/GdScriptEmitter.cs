@@ -201,7 +201,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
             output.Append(indent);
     }
 
-    // Godot forbids nested typed collections; declaration hints retain the omitted schema.
+    // Godot forbids nested typed collections; trailing hints retain the omitted schema.
     private static void EmitDictionaryHint(StringBuilder output, TypeReference type)
     {
         if (type.Kind != TypeKind.Array || type.TypeArguments.Count != 1
@@ -246,6 +246,28 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitType(output, argument);
         }
         output.Append(']');
+    }
+
+    // A standalone local cast can carry its schema at end-of-line, outside Godot's type grammar.
+    // Keep the hint out of the expression tree: it describes the cast type, not a source comment.
+    private void EmitLocalInitializer(StringBuilder output, Expression expression, string indent)
+    {
+        var (type, value) = expression switch
+        {
+            VariantCastExpression cast => (cast.Type, cast.Value),
+            SafeCastExpression cast => (cast.Type, cast.Value),
+            _ => ((TypeReference?)null, (Expression?)null)
+        };
+        if (type?.Kind == TypeKind.Array && type.TypeArguments.Count == 1
+            && type.TypeArguments[0].Kind == TypeKind.Dictionary)
+        {
+            EmitExpression(output, value!, indent);
+            output.Append(" as ");
+            EmitType(output, type, true);
+            EmitDictionaryHint(output, type);
+        }
+        else
+            EmitExpression(output, expression, indent);
     }
 
     private void EmitBody(StringBuilder output, List<SyntaxElement> elements, string indent)
@@ -303,12 +325,17 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     }
                     else
                         output.Append(" = ");
-                    EmitExpression(output, statement.Initializer ?? throw new InvalidOperationException("Inferred local requires a value."), indent);
+                    EmitLocalInitializer(output, statement.Initializer ?? throw new InvalidOperationException("Inferred local requires a value."), indent);
                     output.AppendLine();
                     break;
                 case ForEachStatement statement:
                     output.Append(indent + "for ");
                     output.Append(statement.Variable);
+                    if (statement.VariableType is { } variableType)
+                    {
+                        output.Append(": ");
+                        EmitType(output, variableType);
+                    }
                     output.Append(" in ");
                     EmitExpression(output, statement.Collection, indent);
                     output.AppendLine(":");

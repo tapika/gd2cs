@@ -761,7 +761,12 @@ public sealed class CSharpEmitter : IScriptEmitter
                     output.AppendLine(";");
                     break;
                 case ForEachStatement statement:
-                    output.Append(indent + "foreach (var ");
+                    output.Append(indent + "foreach (");
+                    if (statement.VariableType is { } variableType)
+                        EmitType(output, variableType);
+                    else
+                        output.Append("var");
+                    output.Append(' ');
                     output.Append(statement.Variable);
                     output.Append(" in ");
                     EmitExpression(output, statement.Collection, indent);

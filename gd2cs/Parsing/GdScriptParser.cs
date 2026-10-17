@@ -190,7 +190,7 @@ public sealed class GdScriptParser : IScriptParser
                     typing = tokens.TryConsume(TokenKind.Equals)
                         ? LocalTyping.Inferred
                         : LocalTyping.Explicit;
-                var type = typing == LocalTyping.Explicit ? ParseDeclarationType() : null;
+                var type = typing == LocalTyping.Explicit ? ParseHintedType() : null;
                 var hasInitializer = typing == LocalTyping.Inferred || tokens.TryConsume(TokenKind.Equals);
                 var initializer = hasInitializer
                     ? tokens.Current.Text == "func" ? ParseLambda(statementColumn) : ParseExpression()
@@ -221,11 +221,12 @@ public sealed class GdScriptParser : IScriptParser
     {
         tokens.Expect(TokenKind.Identifier, "for");
         var variable = tokens.Expect(TokenKind.Identifier).Text;
+        var type = tokens.TryConsume(TokenKind.Colon) ? ParseType() : null;
         tokens.Expect(TokenKind.Identifier, "in");
         var collection = ParseExpression();
         tokens.Expect(TokenKind.Colon);
         EndOfLine();
-        return new ForEachStatement(variable, collection, ParseBody(statementColumn));
+        return new ForEachStatement(variable, collection, ParseBody(statementColumn), type);
     }
 
     private WhileStatement ParseWhile(int statementColumn)
@@ -297,7 +298,7 @@ public sealed class GdScriptParser : IScriptParser
         var name = tokens.Expect(TokenKind.Identifier).Text;
         tokens.Expect(TokenKind.Colon);
         var inferred = tokens.TryConsume(TokenKind.Equals);
-        var type = inferred ? new TypeReference("Variant") : ParseDeclarationType();
+        var type = inferred ? new TypeReference("Variant") : ParseHintedType();
         if (!inferred && !tokens.TryConsume(TokenKind.Equals))
         {
             if (isConstant)
@@ -338,8 +339,8 @@ public sealed class GdScriptParser : IScriptParser
         _ => new TypeReference("Variant")
     };
 
-    // Declaration-only hints carry the dictionary schema that Godot cannot nest in Array[].
-    private TypeReference ParseDeclarationType()
+    // Trailing hints on declarations and casts retain schemas Godot cannot nest in Array[].
+    private TypeReference ParseHintedType()
     {
         var opening = tokens.Current;
         var type = ParseType(true);
@@ -467,7 +468,7 @@ public sealed class GdScriptParser : IScriptParser
             }
             if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Identifier, "as"))
             {
-                left = new SafeCastExpression(ParseType(), left);
+                left = new SafeCastExpression(ParseHintedType(), left);
                 continue;
             }
             if (OperatorPrecedence(tokens.Current) < minimumPrecedence)

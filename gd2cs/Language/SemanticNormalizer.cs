@@ -383,19 +383,25 @@ internal sealed class SemanticNormalizer
         _ => true
     };
 
-    // Derives a loop variable from the collection element type when it is available.
+    // An iterator annotation types the body, not the collection: Variant still needs a cast.
     private ForEachStatement NormalizeForEach(ForEachStatement statement, BindingScope scope)
     {
         var collection = NormalizeExpression(statement.Collection, scope);
         var collectionType = ResolveType(collection, scope);
+        if (collectionType?.Kind == TypeKind.Variant)
+            throw SourceLocations.Error(statement.Collection,
+                "Variant collections require an explicit cast before iteration; use 'value as Array[ElementType]' (C#: 'value.As<Godot.Collections.Array<ElementType>>()').");
+        var explicitType = statement.VariableType is { } type ? NormalizeType(type, scope.UserTypes) : null;
+        var elementType = explicitType ?? collectionType?.TypeArguments.FirstOrDefault();
         scope.Push();
         try
         {
-            if (collectionType?.TypeArguments.Count > 0)
-                scope.Declare(statement.Variable, collectionType.TypeArguments[0]);
+            // Even unknown iterator types shadow an outer variable of the same name.
+            scope.Declare(statement.Variable, elementType ?? new TypeReference("Variant"));
             return statement with
             {
                 Collection = collection,
+                VariableType = explicitType,
                 Elements = NormalizeBody(statement.Elements, scope)
             };
         }

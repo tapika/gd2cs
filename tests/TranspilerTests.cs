@@ -290,6 +290,27 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData(".gd", "for node: Node in callback.call() as Array[Node]:", "for node in callback.call():", "callback.call()")]
+    [InlineData(".gd", "for node: Node in callback.call() as Array[Node]:", "for node: Node in callback.call():", "callback.call()")]
+    [InlineData(".cs", "foreach (Node node in callback.Call().As<Godot.Collections.Array<Node>>())", "foreach (var node in callback.Call())", "callback.Call()")]
+    [InlineData(".cs", "foreach (Node node in callback.Call().As<Godot.Collections.Array<Node>>())", "foreach (Node node in callback.Call())", "callback.Call()")]
+    [InlineData(".gd", "callback.call() as Array[Dictionary] #[String, Variant]", "callback.call()", "in entries")]
+    [InlineData(".cs", "callback.Call().As<Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>>>()", "callback.Call()", "in entries")]
+    public void RejectVariantLoops(string extension, string original, string replacement, string offending)
+    {
+        var source = File.ReadAllText(Fixture("Statements/ControlFlow" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("Variant collections require an explicit cast", error.Message);
+        Assert.Contains("as Array[ElementType]", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(offending, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        var token = offending == "in entries" ? "entries" : offending;
+        Assert.Equal(lines[line].IndexOf(token, StringComparison.Ordinal) + 1, error.Column);
+    }
+
+    [Theory]
     [InlineData("PackedVector2Array", "Vector2")]
     [InlineData("PackedVector3Array", "Vector3")]
     [InlineData("PackedColorArray", "Color")]
