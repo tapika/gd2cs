@@ -4,6 +4,15 @@ using System;
 [GlobalClass]
 public partial class MathFunctions : RefCounted
 {
+	public const float FullTurn = Mathf.Tau;
+	public const float HalfTurn = Mathf.Pi;
+	public const float Infinity = Mathf.Inf;
+	public const float Invalid = Mathf.NaN;
+
+	public float PositiveLimit = Mathf.Inf;
+	public float NegativeLimit = -Mathf.Inf;
+	public float Missing = Mathf.NaN;
+
 	public float Limited = 0.0f;
 	public int Ceiling = 0;
 	public int Rounded = 0;
@@ -33,5 +42,28 @@ public partial class MathFunctions : RefCounted
 		Interpolated = Mathf.Lerp(value, 1.0f, 0.5f);
 		IntegerMinimum = Mathf.Min(2, Mathf.CeilToInt(value));
 		IntegerMaximum = Mathf.Max(2, Mathf.CeilToInt(value));
+	}
+
+	public float constants()
+	{
+		var turn = Mathf.Tau;
+		var edge = -Mathf.Inf;
+		return turn + Mathf.Pi + edge;
+	}
+
+	public float shadow(float TAU)
+	{
+		var PI = TAU;
+		return PI;
+	}
+
+	public partial class LocalConstants : RefCounted
+	{
+		public const float INF = 2.0f;
+
+		public float read()
+		{
+			return INF;
+		}
 	}
 }

@@ -10,6 +10,12 @@ internal sealed class GodotStaticMembers
     private sealed record Candidate(string Owner, string Name, Type Type, GodotStaticMemberKind Kind,
         string Receiver);
 
+    // GDScript intrinsics are absent from the extension API's class constants. Only these
+    // names are globally visible; never expose unrelated Mathf fields such as Epsilon.
+    // Managed spellings here belong to the deterministic fallback, not production binding.
+    private static readonly List<(string Native, string KnownManaged)> globals =
+        [("PI", "Pi"), ("TAU", "Tau"), ("INF", "Inf"), ("NAN", "NaN")];
+
     // Native and managed qualified spellings point to the same reflected member identity.
     private readonly Dictionary<string, Entry> nativeMembers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Entry> managedMembers = new(StringComparer.Ordinal);
@@ -102,6 +108,23 @@ internal sealed class GodotStaticMembers
                 }
             }
         }
+        // Reuse reflected identities/types/constant semantics, rather than substituting text
+        // or embedding numeric values. Add globals after inheritance indexing: they have no owner.
+        foreach (var (native, _) in globals)
+        {
+            var matches = (byName.GetValueOrDefault(Normalize(native)) ?? new List<Candidate>())
+                .Where(candidate => candidate.Owner == "Mathf"
+                    && candidate.Kind is GodotStaticMemberKind.Constant or GodotStaticMemberKind.ReadonlyField)
+                .DistinctBy(candidate => (candidate.Owner, candidate.Name)).ToList();
+            if (matches.Count == 1)
+            {
+                var match = matches[0];
+                catalog.Add(native, new GodotStaticMemberReference(match.Owner, match.Name,
+                    GodotTypeCatalog.ToTypeReference(match.Type), match.Kind));
+            }
+            else
+                catalog.unresolved.Add(native);
+        }
         return catalog;
     }
 
@@ -123,6 +146,9 @@ internal sealed class GodotStaticMembers
         catalog.Add("Node.NOTIFICATION_READY", notification);
         catalog.nativeMembers.Add("Node3D.NOTIFICATION_READY", catalog.nativeMembers["Node.NOTIFICATION_READY"]);
         catalog.managedMembers.Add("Node3D.NotificationReady", catalog.managedMembers["Node.NotificationReady"]);
+        foreach (var (native, managed) in globals)
+            catalog.Add(native, new GodotStaticMemberReference("Mathf", managed, new TypeReference("float"),
+                GodotStaticMemberKind.Constant));
         return catalog;
     }
 

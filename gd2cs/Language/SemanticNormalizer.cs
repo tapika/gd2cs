@@ -651,6 +651,7 @@ internal sealed class SemanticNormalizer
                 Expression = NormalizeExpression(parenthesized.Expression, scope, allowVariantDictionaryRead)
             },
             ValueExpression value when TryNormalizeEnum(value, scope, out var constant) => constant,
+            ValueExpression value when TryNormalizeStaticMember(value, scope, out var global) => global,
             MemberAccessExpression member => NormalizeMemberAccess(member, scope),
             GodotMemberAccessExpression member => member with
             {
@@ -1103,7 +1104,7 @@ internal sealed class SemanticNormalizer
         return member with { Target = target };
     }
 
-    // Bind qualified type owners only after lexical shadowing checks; instances keep their own members.
+    // Bind type-qualified members and unqualified globals only after lexical shadowing checks.
     private bool TryNormalizeStaticMember(Expression expression, BindingScope scope, out Expression result)
     {
         result = null!;

@@ -1,6 +1,15 @@
 class_name MathFunctions
 extends RefCounted
 
+const FullTurn := TAU
+const HalfTurn := PI
+const Infinity := INF
+const Invalid := NAN
+
+var PositiveLimit := INF
+var NegativeLimit := -INF
+var Missing := NAN
+
 var Limited := 0.0
 var Ceiling := 0
 var Rounded := 0
@@ -29,3 +38,18 @@ func evaluate(value: float):
 	Interpolated = lerpf(value, 1.0, 0.5)
 	IntegerMinimum = mini(2, ceili(value))
 	IntegerMaximum = maxi(2, ceili(value))
+
+func constants() -> float:
+	var turn := TAU
+	var edge := -INF
+	return turn + PI + edge
+
+func shadow(TAU: float) -> float:
+	var PI := TAU
+	return PI
+
+class LocalConstants:
+	const INF := 2.0
+
+	func read() -> float:
+		return INF
