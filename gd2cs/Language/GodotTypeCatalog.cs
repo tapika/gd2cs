@@ -185,6 +185,7 @@ public sealed class GodotTypeCatalog
         [
             KnownMember("Node3D", "Position", "Vector3"),
             KnownMember("Node3D", "GlobalPosition", "Vector3"),
+            KnownMember("World3D", "DirectSpaceState", "PhysicsDirectSpaceState3D"),
             KnownMember("Aabb", "Position", "Vector3"),
             KnownMember("Aabb", "Size", "Vector3"),
             KnownMember("Aabb", "End", "Vector3"),
@@ -220,6 +221,7 @@ public sealed class GodotTypeCatalog
         ],
         [
             KnownMethod("Node3D", "Node", "AddChild", "add_child", 1, 3, "void"),
+            KnownMethod("Node3D", "Node3D", "GetWorld3D", ToSnakeCase("GetWorld3D"), 0, 0, "World3D"),
             KnownMethod("Aabb", "Aabb", "GetCenter", "get_center", 0, 0, "Vector3"),
             KnownMethod("Node", "Node", "GetParent", "get_parent", 0, 0, "Node"),
             KnownMethod("Vector2", "Vector2", "DistanceTo", "distance_to", 1, 1, "float"),
@@ -729,6 +731,9 @@ public sealed class GodotTypeCatalog
     // Handles word and acronym boundaries while producing Godot's lower snake-case convention.
     private static string ToSnakeCase(string name)
     {
+        // Godot spells this dimensional suffix _3d; ordinary word splitting would produce 3_d.
+        if (name == "GetWorld3D")
+            return "get_world_3d";
         var result = new StringBuilder();
         for (var index = 0; index < name.Length; index++)
         {

@@ -2,7 +2,7 @@ using Godot;
 using System;
 
 [GlobalClass]
-public partial class BuiltInValues : RefCounted
+public partial class BuiltInValues : Node3D
 {
 	public Aabb Bounds;
 	public Godot.Collections.Array<Aabb> BoundsList = new Godot.Collections.Array<Aabb>();
@@ -50,6 +50,21 @@ public partial class BuiltInValues : RefCounted
 	public void attach(Node3D parent, Node3D child)
 	{
 		parent.AddChild(child);
+	}
+
+	public World3D world()
+	{
+		return GetWorld3D();
+	}
+
+	public World3D ownWorld()
+	{
+		return this.GetWorld3D();
+	}
+
+	public PhysicsDirectSpaceState3D space(Node3D node)
+	{
+		return node.GetWorld3D().DirectSpaceState;
 	}
 
 	public Texture2D loadTexture()

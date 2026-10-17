@@ -1,5 +1,5 @@
 class_name BuiltInValues
-extends RefCounted
+extends Node3D
 
 var Bounds : AABB
 var BoundsList : Array[AABB]
@@ -36,6 +36,15 @@ func withHeight(node: Node3D, height: float) -> Vector3:
 
 func attach(parent: Node3D, child: Node3D):
 	parent.add_child(child)
+
+func world() -> World3D:
+	return get_world_3d()
+
+func ownWorld() -> World3D:
+	return self.get_world_3d()
+
+func space(node: Node3D) -> PhysicsDirectSpaceState3D:
+	return node.get_world_3d().direct_space_state
 
 func loadTexture() -> Texture2D:
 	var texture := load("res://icons/sample.svg") as Texture2D
