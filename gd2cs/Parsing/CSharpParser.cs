@@ -462,6 +462,17 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(TokenKind.Identifier, "callback");
             tokens.Expect(TokenKind.CloseParenthesis);
         }
+        else if (tokens.TryConsume(TokenKind.Identifier, "string"))
+        {
+            tokens.Expect(TokenKind.Identifier, "gdStr");
+            tokens.Expect(TokenKind.OpenParenthesis);
+            tokens.Expect(TokenKind.Identifier, "params");
+            tokens.Expect(TokenKind.Identifier, "Variant");
+            tokens.Expect(TokenKind.OpenBracket);
+            tokens.Expect(TokenKind.CloseBracket);
+            tokens.Expect(TokenKind.Identifier, "values");
+            tokens.Expect(TokenKind.CloseParenthesis);
+        }
         else if (tokens.TryConsume(TokenKind.Identifier, "void"))
         {
             tokens.Expect(TokenKind.Identifier, "gdSortCustom");

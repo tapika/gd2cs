@@ -30,6 +30,15 @@ func stringifyChain(value: RefCounted) -> String:
 	var text := value.to_string()
 	return text.to_upper()
 
+func convert(value: Variant, entries: Dictionary[String, Variant], callback: Callable) -> String:
+	var empty := str()
+	var nil := str(null)
+	var text := str(value)
+	var entry := str(entries["value"])
+	var called := str(callback.call())
+	return str(empty, nil, text,
+		entry, called, "text", 42, true)
+
 func custom(source: LocalStrings, value: Variant) -> String:
 	return source.str(value) + source.ToString(1)
 

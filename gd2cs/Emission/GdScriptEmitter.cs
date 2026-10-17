@@ -431,6 +431,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(".call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
+            case StringifyExpression stringify:
+                output.Append("str");
+                EmitArguments(output, stringify.Arguments, indent);
+                break;
             case ArrayBufferExpression buffer:
                 output.Append(PackedArrayMappings.NativeName(buffer.ElementType));
                 output.Append('(');

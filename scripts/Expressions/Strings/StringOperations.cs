@@ -51,6 +51,17 @@ public partial class StringOperations : RefCounted
 		return text.ToUpperInvariant();
 	}
 
+	public string convert(Variant value, Godot.Collections.Dictionary<string, Variant> entries, Callable callback)
+	{
+		var empty = gdStr();
+		var nil = gdStr(new Variant());
+		var text = gdStr(value);
+		var entry = gdStr(entries["value"]);
+		var called = gdStr(callback.Call());
+		return gdStr(empty, nil, text,
+			entry, called, "text", 42, true);
+	}
+
 	public string custom(LocalStrings source, Variant value)
 	{
 		return source.str(value) + source.ToString(1);
@@ -72,5 +83,13 @@ public partial class StringOperations : RefCounted
 		{
 			return "custom";
 		}
+	}
+
+	private static string gdStr(params Variant[] values)
+	{
+		var result = new System.Text.StringBuilder();
+		foreach (var value in values)
+			result.Append(value.ToString());
+		return result.ToString();
 	}
 }

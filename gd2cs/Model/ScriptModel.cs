@@ -131,6 +131,9 @@ public sealed record CallableNullExpression(Expression Target) : Expression;
 // Validity checks the target/method or delegate lifetime, not merely whether a Callable is empty.
 public sealed record CallableValidityExpression(Expression Target) : Expression;
 
+// Godot's str accepts nil and concatenates Variant conversions, unlike Object.to_string().
+public sealed record StringifyExpression(ArgumentList Arguments) : Expression;
+
 // Copies a typed Godot array into a contiguous API buffer; no packed storage operations are implied.
 public sealed record ArrayBufferExpression(Expression Value, TypeReference ElementType) : Expression;
 

@@ -596,6 +596,7 @@ internal sealed class SemanticNormalizer
             {
                 Target = NormalizeExpression(callable.Target, scope)
             },
+            StringifyExpression stringify => NormalizeStringify(stringify.Arguments, scope),
             CallableValidityExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope)
@@ -730,10 +731,12 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
-        // Reject only the built-in conversion, not user methods or callable variables named str.
-        if (language == ScriptLanguage.GdScript && invocation.Target is ValueExpression { Text: "str" }
-            && !scope.IsUserMethod("str") && scope.Resolve("str") is null && !scope.UserTypes.Contains("str"))
-            throw SourceLocations.Error(invocation, "str() is not supported; use value.to_string() instead and handle null explicitly.");
+        // Bind the built-in conversion or its reserved helper, never a shadowing declaration.
+        var stringifyName = language == ScriptLanguage.GdScript ? "str" : "gdStr";
+        if (invocation.Target is ValueExpression stringify && stringify.Text == stringifyName
+            && !scope.IsUserMethod(stringifyName) && scope.Resolve(stringifyName) is null
+            && !scope.UserTypes.Contains(stringifyName))
+            return NormalizeStringify(invocation.Arguments, scope);
         if (TryNormalizeSignalConnection(invocation, scope, out var connection))
             return connection;
         if (TryNormalizeSignalEmission(invocation, scope, out var emission))
@@ -1386,6 +1389,21 @@ internal sealed class SemanticNormalizer
         return interpolated with { Parts = parts };
     }
 
+    // Stringification explicitly consumes Variants, including dictionary reads. C# constructs
+    // an empty Variant for nil because null cannot be passed directly to the Variant value type.
+    private StringifyExpression NormalizeStringify(ArgumentList arguments, BindingScope scope) => new(arguments with
+    {
+        Arguments = arguments.Arguments.Select(argument => argument with
+        {
+            Value = language == ScriptLanguage.CSharp && IsEmptyVariant(argument.Value)
+                ? new ValueExpression("null")
+                : NormalizeExpression(argument.Value, scope, allowVariantDictionaryRead: true)
+        }).ToList()
+    });
+
+    private static bool IsEmptyVariant(Expression value) => value is ObjectCreationExpression creation
+        && creation.Type.Kind == TypeKind.Variant && creation.Arguments.Arguments.Count == 0;
+
     // Rewrites argument values while retaining their individual line-break metadata.
     private ArgumentList NormalizeArguments(ArgumentList arguments, BindingScope scope) => arguments with
     {
@@ -1411,6 +1429,7 @@ internal sealed class SemanticNormalizer
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
         CallableValidityExpression => new TypeReference("bool"),
+        StringifyExpression => new TypeReference("string"),
         ArrayBufferExpression buffer => new TypeReference("ArrayBuffer", new List<TypeReference> { buffer.ElementType }),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),

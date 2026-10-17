@@ -12,6 +12,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private bool requiresCallableValidity;
     private bool requiresArrayBuffers;
     private bool requiresCustomSort;
+    private bool requiresStringify;
     private readonly HashSet<CollectionOperation> dictionaryArrayHelpers = new();
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
     private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
@@ -28,6 +29,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         requiresCallableValidity = false;
         requiresArrayBuffers = false;
         requiresCustomSort = false;
+        requiresStringify = false;
         dictionaryArrayHelpers.Clear();
         patternNames.Clear();
         occupiedNames = EventParameterConversions.Names(model.Elements);
@@ -128,6 +130,8 @@ public sealed class CSharpEmitter : IScriptEmitter
             EmitCallableValidityHelper(output, indent);
         if (isRoot && requiresCustomSort)
             EmitCustomSortHelper(output, indent);
+        if (isRoot && requiresStringify)
+            EmitStringifyHelper(output, indent);
         if (isRoot)
             foreach (var operation in dictionaryArrayHelpers.Order())
                 EmitDictionaryArrayHelper(output, operation, indent);
@@ -251,6 +255,20 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, callable.Target, indent);
                 output.Append(".Call");
                 EmitArguments(output, callable.Arguments, indent);
+                break;
+            case StringifyExpression stringify:
+                requiresStringify = true;
+                output.Append("gdStr");
+                // Explicit construction avoids params treating a lone default as a null array.
+                EmitArguments(output, stringify.Arguments with
+                {
+                    Arguments = stringify.Arguments.Arguments.Select(argument => argument with
+                    {
+                        Value = argument.Value is ValueExpression { Text: "null" }
+                            ? new ObjectCreationExpression(new TypeReference("Variant"), new ArgumentList(new List<Argument>(), false))
+                            : argument.Value
+                    }).ToList()
+                }, indent);
                 break;
             case ArrayBufferExpression buffer:
                 requiresArrayBuffers = true;
@@ -942,6 +960,19 @@ public sealed class CSharpEmitter : IScriptEmitter
         output.AppendLine(indent + "        var result = new Godot.Collections.Array<T>();");
         output.AppendLine(indent + "        foreach (var value in values) result.Add(value);");
         output.AppendLine(indent + "        return result;");
+        output.AppendLine(indent + "    }");
+    }
+
+    // Variant.ToString uses Godot's conversion, including nil, rather than CLR object formatting.
+    private static void EmitStringifyHelper(StringBuilder output, string indent)
+    {
+        output.AppendLine();
+        output.AppendLine(indent + "    private static string gdStr(params Variant[] values)");
+        output.AppendLine(indent + "    {");
+        output.AppendLine(indent + "        var result = new System.Text.StringBuilder();");
+        output.AppendLine(indent + "        foreach (var value in values)");
+        output.AppendLine(indent + "            result.Append(value.ToString());");
+        output.AppendLine(indent + "        return result.ToString();");
         output.AppendLine(indent + "    }");
     }
 
