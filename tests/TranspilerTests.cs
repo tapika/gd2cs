@@ -146,6 +146,24 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
     }
 
+    [Theory]
+    [InlineData("str(value)")]
+    [InlineData("str()")]
+    [InlineData("str(value, value)")]
+    [InlineData("str(1)")]
+    [InlineData("str(null)")]
+    public void RejectStr(string replacement)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Strings/StringOperations.gd")).Replace("value.to_string()", replacement);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.Contains("use value.to_string() instead", error.Message);
+        Assert.Contains("handle null explicitly", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public void ScalarFormat()
     {

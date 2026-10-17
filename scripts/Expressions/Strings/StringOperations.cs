@@ -30,4 +30,47 @@ public partial class StringOperations : RefCounted
 	{
 		return text.ToUpperInvariant().ToLowerInvariant();
 	}
+
+	public string stringify(RefCounted value)
+	{
+		return value.ToString();
+	}
+
+	public string stringifyOptional(RefCounted value)
+	{
+		if (value == null)
+		{
+			return "<null>";
+		}
+		return value.ToString();
+	}
+
+	public string stringifyChain(RefCounted value)
+	{
+		var text = value.ToString();
+		return text.ToUpperInvariant();
+	}
+
+	public string custom(LocalStrings source, Variant value)
+	{
+		return source.str(value) + source.ToString(1);
+	}
+
+	public partial class LocalStrings : RefCounted
+	{
+		public string str(Variant value)
+		{
+			return "custom";
+		}
+
+		public string format(Variant value)
+		{
+			return str(value);
+		}
+
+		public string ToString(int value)
+		{
+			return "custom";
+		}
+	}
 }

@@ -122,6 +122,10 @@ Use `=` to retain dynamic access to the returned C# instance's members. Call the
 
 ## Unsupported language features
 
+### String conversion
+
+`str(...)` is not supported; use an object's `to_string()` instead, which maps to C# `ToString()`. Unlike `to_string()`, `str()` accepts null: check for null explicitly if needed. Strings and other primitive values do not have the Object `to_string()` method; use an appropriate explicit conversion or formatting instead.
+
 ### Membership operator
 
 GDScript membership expressions such as `value in values` are not supported. Use `values.has(value)` instead: arrays translate to C# `Contains(value)`, dictionaries to `ContainsKey(value)`. For example, `[1, 2, 3].has(value)` replaces `value in [1, 2, 3]`. Negate `.has()` with `not` when needed. This restriction does not affect `for value in values` loops.

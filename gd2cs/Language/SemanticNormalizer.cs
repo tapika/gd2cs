@@ -730,6 +730,10 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
+        // Reject only the built-in conversion, not user methods or callable variables named str.
+        if (language == ScriptLanguage.GdScript && invocation.Target is ValueExpression { Text: "str" }
+            && !scope.IsUserMethod("str") && scope.Resolve("str") is null && !scope.UserTypes.Contains("str"))
+            throw SourceLocations.Error(invocation, "str() is not supported; use value.to_string() instead and handle null explicitly.");
         if (TryNormalizeSignalConnection(invocation, scope, out var connection))
             return connection;
         if (TryNormalizeSignalEmission(invocation, scope, out var emission))

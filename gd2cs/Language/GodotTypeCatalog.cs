@@ -226,7 +226,8 @@ public sealed class GodotTypeCatalog
             KnownMethod("Node", "Node", "GetParent", "get_parent", 0, 0, "Node"),
             KnownMethod("Vector2", "Vector2", "DistanceTo", "distance_to", 1, 1, "float"),
             KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
-            KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string")
+            KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string"),
+            KnownMethod("RefCounted", "GodotObject", "ToString", "to_string", 0, 0, "string")
         ],
         [
             KnownGlobalFunction("TranslationServer", "SetLocale", "set_locale", 1, 1, "void"),
