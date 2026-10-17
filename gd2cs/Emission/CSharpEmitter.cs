@@ -10,6 +10,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private readonly GodotTypeCatalog godotTypes;
     private bool requiresGdArray;
     private bool requiresCallableValidity;
+    private bool requiresArrayBuffers;
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
     private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
     private HashSet<string> occupiedNames = new(StringComparer.Ordinal);
@@ -23,11 +24,13 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         requiresGdArray = false;
         requiresCallableValidity = false;
+        requiresArrayBuffers = false;
         patternNames.Clear();
         occupiedNames = EventParameterConversions.Names(model.Elements);
         var output = new StringBuilder();
         output.AppendLine("using Godot;");
         output.AppendLine("using System;");
+        var usingOffset = output.Length;
         output.AppendLine();
         foreach (var element in model.Elements)
         {
@@ -47,6 +50,8 @@ public sealed class CSharpEmitter : IScriptEmitter
                     throw new NotSupportedException("Unsupported language dialect.");
             }
         }
+        if (requiresArrayBuffers)
+            output.Insert(usingOffset, "using System.Linq;" + Environment.NewLine);
         return output.ToString().Replace(Environment.NewLine, "\n");
     }
 
@@ -237,6 +242,11 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, callable.Target, indent);
                 output.Append(".Call");
                 EmitArguments(output, callable.Arguments, indent);
+                break;
+            case ArrayBufferExpression buffer:
+                requiresArrayBuffers = true;
+                EmitExpression(output, buffer.Value, indent);
+                output.Append(".ToArray()");
                 break;
             case CallableValidityExpression validity:
                 requiresCallableValidity = true;
@@ -866,6 +876,12 @@ public sealed class CSharpEmitter : IScriptEmitter
 
     private static void EmitType(StringBuilder output, TypeReference type)
     {
+        if (type.Kind == TypeKind.ArrayBuffer)
+        {
+            EmitType(output, type.TypeArguments.Single());
+            output.Append("[]");
+            return;
+        }
         var name = type.Kind switch { TypeKind.String => "string", TypeKind.Int64 => "long", _ => type.Name };
         output.Append(type.Kind is TypeKind.Array or TypeKind.Dictionary
             ? "Godot.Collections." + name

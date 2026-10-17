@@ -170,6 +170,18 @@ return callback.is_valid() and (callback.call(value) as bool)
 
 This emits `gdCallableIsValid(callback) && callback.Call(value).As<bool>()` in C#. The cast is preserved on backtranslation; gd2cs does not insert implicit Boolean extraction or generate `AsBool()`. Uncast Variant conditions produce a source-located error suggesting the conversion, including when the Variant is stored in a local. Calls used as statements or returned as `Variant` do not require a cast. Validity checks remain separate from result conversion.
 
+### Packed arrays at API boundaries
+
+Godot's `PackedVector2Array`, `PackedVector3Array`, and `PackedColorArray` classes were not ported to C#; the managed API uses `Vector2[]`, `Vector3[]`, and `Color[]`. gd2cs rejects packed-array type declarations and empty construction such as `PackedVector2Array()`. Build values using a typed Godot array instead:
+
+```gdscript
+var points : Array[Vector2]
+points.append(Vector2(1.0, 2.0))
+shape.polygon = PackedVector2Array(points)
+```
+
+Only conversion from an existing, matching typed array is supported: `PackedVector2Array(points)` becomes `points.ToArray()` in C#, and backtranslation restores the packed conversion. The same applies to `Array[Vector3]` and `Array[Color]`. Nonempty array literals can also be converted; initializer line breaks are preserved. C# adds `using System.Linq;` when required. Conversion copies the values into an API buffer; it does not turn the mutable Godot array into packed storage or add packed-array mutation support. Calls on unrelated types named `ToArray` are not rewritten.
+
 ### Empty array literals
 
 `gd2cs` requires array literals to contain at least one element. Empty literals such as `var values := []` and `var values : Array[int] = []` are rejected. For an initially empty array, declare its type without an initializer:

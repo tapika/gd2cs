@@ -48,6 +48,7 @@ public sealed record TypeReference(string Name, List<TypeReference> TypeArgument
         "Callable" => TypeKind.Callable,
         "Array" => TypeKind.Array,
         "Dictionary" => TypeKind.Dictionary,
+        "ArrayBuffer" => TypeKind.ArrayBuffer,
         "RefCounted" or "GodotObject" => TypeKind.GodotObject,
         _ => TypeKind.UserObject
     };
@@ -71,7 +72,9 @@ public enum TypeKind
     GodotObject,
     UserObject,
     Array,
-    Dictionary
+    Dictionary,
+    // A contiguous API buffer (C# T[]), distinct from a mutable Godot Array<T>.
+    ArrayBuffer
 }
 
 // Stores a constant literal and whether its source type was inferred.
@@ -124,6 +127,9 @@ public sealed record CallableNullExpression(Expression Target) : Expression;
 
 // Validity checks the target/method or delegate lifetime, not merely whether a Callable is empty.
 public sealed record CallableValidityExpression(Expression Target) : Expression;
+
+// Copies a typed Godot array into a contiguous API buffer; no packed storage operations are implied.
+public sealed record ArrayBufferExpression(Expression Value, TypeReference ElementType) : Expression;
 
 // Represents a scalar conversion independently of each language's cast syntax.
 public sealed record ConversionExpression(

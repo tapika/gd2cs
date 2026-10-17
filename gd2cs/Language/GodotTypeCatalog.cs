@@ -187,6 +187,8 @@ public sealed class GodotTypeCatalog
             KnownMember("Node3D", "GlobalPosition", "Vector3"),
             KnownMember("Aabb", "Position", "Vector3"),
             KnownMember("Aabb", "Size", "Vector3"),
+            KnownMember("Polygon2D", "Polygon", "ArrayBuffer", new TypeReference("Vector2")),
+            KnownMember("Line2D", "Points", "ArrayBuffer", new TypeReference("Vector2")),
             KnownMember("InputEventKey", "Pressed", "bool"),
             KnownMember("InputEventKey", "Echo", "bool"),
             KnownMember("InputEventMouseButton", "Pressed", "bool"),
@@ -614,13 +616,14 @@ public sealed class GodotTypeCatalog
             ToTypeReference(resultType)));
     }
 
-    private static Member KnownMember(string receiverType, string cSharpName, string resultType) => new(
+    private static Member KnownMember(string receiverType, string cSharpName, string resultType,
+        params TypeReference[] resultArguments) => new(
         receiverType,
         receiverType,
         NormalizeName(cSharpName),
         ToSnakeCase(cSharpName),
         cSharpName,
-        new TypeReference(resultType));
+        new TypeReference(resultType, resultArguments.ToList()));
 
     private static GlobalFunction KnownGlobalFunction(
         string declaringType,
@@ -693,7 +696,7 @@ public sealed class GodotTypeCatalog
         if (type.IsArray)
         {
             return new TypeReference(
-                "Array",
+                "ArrayBuffer",
                 new List<TypeReference> { ToTypeReference(type.GetElementType()!) });
         }
         var name = type.Name switch

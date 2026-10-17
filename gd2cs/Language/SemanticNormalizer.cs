@@ -594,6 +594,10 @@ internal sealed class SemanticNormalizer
             {
                 Target = NormalizeExpression(callable.Target, scope)
             },
+            ArrayBufferExpression buffer => buffer with
+            {
+                Value = NormalizeExpression(buffer.Value, scope)
+            },
             ObjectCreationExpression creation => creation with
             {
                 Type = NormalizeType(creation.Type, scope.UserTypes),
@@ -733,6 +737,20 @@ internal sealed class SemanticNormalizer
         else
             target = NormalizeExpression(invocation.Target, scope);
         var arguments = NormalizeArguments(invocation.Arguments, scope);
+        // Packed constructors are conversions, not mutable collection construction.
+        // Require a known matching element type; never infer it from a name or an API destination.
+        if (language == ScriptLanguage.GdScript && target is ValueExpression packed
+            && !scope.UserTypes.Contains(packed.Text) && !scope.IsUserMethod(packed.Text)
+            && scope.Resolve(packed.Text) is null && PackedArrayMappings.TryElement(packed.Text, out var element))
+        {
+            if (arguments.Arguments.Count != 1)
+                throw SourceLocations.Error(invocation, PackedArrayMappings.StorageError(packed.Text));
+            var value = arguments.Arguments[0].Value;
+            var type = ResolveType(value, scope);
+            if (type?.Kind != TypeKind.Array || type.TypeArguments.Count != 1 || type.TypeArguments[0].Name != element)
+                throw SourceLocations.Error(invocation, $"{packed.Text} conversion requires Array[{element}]; declare the source array type explicitly.");
+            return new ArrayBufferExpression(value, type.TypeArguments[0]);
+        }
         // The generated helper is a dialect detail. User declarations with that name are not helpers.
         if (language == ScriptLanguage.CSharp && target is ValueExpression { Text: "gdCallableIsValid" }
             && !scope.IsUserMethod("gdCallableIsValid") && scope.Resolve("gdCallableIsValid") is null
@@ -792,6 +810,14 @@ internal sealed class SemanticNormalizer
         var receiverType = ResolveType(member.Target, scope);
         if (receiverType is null)
             return invocation with { Target = target, Arguments = arguments };
+        // ToArray is recognized only on a typed Godot array, not arbitrary user methods.
+        if (language == ScriptLanguage.CSharp && receiverType.Kind == TypeKind.Array && member.Member == "ToArray")
+        {
+            if (arguments.Arguments.Count != 0 || receiverType.TypeArguments.Count != 1
+                || !PackedArrayMappings.Supports(receiverType.TypeArguments[0]))
+                throw SourceLocations.Error(invocation, "ToArray() conversion supports only Godot arrays of Vector2, Vector3 or Color.");
+            return new ArrayBufferExpression(member.Target, receiverType.TypeArguments[0]);
+        }
         if (receiverType.Kind == TypeKind.Callable &&
             member.Member == (language == ScriptLanguage.CSharp ? "Call" : "call"))
             return new CallableInvocationExpression(member.Target, arguments);
@@ -1189,6 +1215,7 @@ internal sealed class SemanticNormalizer
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
         CallableValidityExpression => new TypeReference("bool"),
+        ArrayBufferExpression buffer => new TypeReference("ArrayBuffer", new List<TypeReference> { buffer.ElementType }),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
         ValueExpression { Text: "true" or "false" } => new TypeReference("bool"),

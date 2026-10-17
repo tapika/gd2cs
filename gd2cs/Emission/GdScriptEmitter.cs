@@ -220,6 +220,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
 
     private static void EmitType(StringBuilder output, TypeReference type, bool omitNestedDictionaryTypes = false)
     {
+        if (type.Kind == TypeKind.ArrayBuffer)
+        {
+            output.Append(PackedArrayMappings.NativeName(type.TypeArguments.Single()));
+            return;
+        }
         output.Append(type.Kind switch
         {
             TypeKind.String => "String",
@@ -398,6 +403,12 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitExpression(output, callable.Target, indent);
                 output.Append(".call");
                 EmitArguments(output, callable.Arguments, indent);
+                break;
+            case ArrayBufferExpression buffer:
+                output.Append(PackedArrayMappings.NativeName(buffer.ElementType));
+                output.Append('(');
+                EmitExpression(output, buffer.Value, indent);
+                output.Append(')');
                 break;
             case CallableValidityExpression validity:
                 EmitExpression(output, validity.Target, indent);

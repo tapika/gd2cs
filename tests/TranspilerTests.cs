@@ -226,6 +226,41 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData("PackedVector2Array", "Vector2")]
+    [InlineData("PackedVector3Array", "Vector3")]
+    [InlineData("PackedColorArray", "Color")]
+    public void RejectPackedStorage(string packed, string element)
+    {
+        var gd = File.ReadAllText(Fixture("Expressions/Collections/ArrayBuffers.gd"));
+        foreach (var source in new[]
+        {
+            gd.Replace("var Points : Array[Vector2]", "var Points : " + packed),
+            gd.Replace("PackedVector2Array(Points)", packed + "()"),
+            gd.Replace("PackedVector2Array(Points)", packed + "(Points, Points)")
+        })
+        {
+            var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+            Assert.Contains("not ported to C#", error.Message);
+            Assert.Contains("Array[" + element + "]", error.Message);
+            var lines = source.ReplaceLineEndings("\n").Split('\n');
+            var line = Array.FindIndex(lines, text => text.Contains(packed, StringComparison.Ordinal));
+            Assert.Equal(line + 1, error.Line);
+            Assert.Equal(lines[line].IndexOf(packed, StringComparison.Ordinal) + 1, error.Column);
+        }
+    }
+
+    [Fact]
+    public void RejectBufferMismatch()
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Collections/ArrayBuffers.gd"))
+            .Replace("PackedVector2Array(Points)", "PackedVector2Array(Positions)");
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.Contains("requires Array[Vector2]", error.Message);
+        Assert.True(error.Line > 1);
+        Assert.True(error.Column > 1);
+    }
+
+    [Theory]
     [InlineData(".gd", "return callback.call(1) as bool", "return callback.call(1)", "callback.call(1)")]
     [InlineData(".gd", "if callback.is_valid():", "if callback.call(1):", "callback.call(1)")]
     [InlineData(".gd", "if callback.is_valid():", "if not callback.call(1):", "callback.call(1)")]
@@ -425,7 +460,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(24, r.Count);
+        Assert.Equal(25, r.Count);
         return r;
     }
 

@@ -355,6 +355,8 @@ public sealed class GdScriptParser : IScriptParser
         // Keep nested-class qualification before parsing container type arguments.
         while (tokens.TryConsume(TokenKind.Dot))
             name += "." + tokens.Expect(TokenKind.Identifier).Text;
+        if (PackedArrayMappings.TryElement(name, out _))
+            throw new ParseException(PackedArrayMappings.StorageError(name), typeToken.Line, typeToken.Column);
         var arguments = new List<TypeReference>();
         if (tokens.TryConsume(TokenKind.OpenBracket))
         {

@@ -15,6 +15,8 @@ public sealed class CSharpParser : IScriptParser
         groupingDepth = 0;
         ParseUsing("Godot");
         ParseUsing("System");
+        if (tokens.Current.Text == "using")
+            ParseUsing("System.Linq");
         tokens.TryConsume(TokenKind.NewLine);
 
         var elements = new List<SyntaxElement>();
@@ -383,7 +385,7 @@ public sealed class CSharpParser : IScriptParser
             offset++;
         }
         if (tokens.PeekAt(offset).Kind != TokenKind.LessThan)
-            return true;
+            return LookAheadArraySuffix(ref offset);
         offset++;
         do
         {
@@ -397,6 +399,16 @@ public sealed class CSharpParser : IScriptParser
         if (tokens.PeekAt(offset).Kind != TokenKind.GreaterThan)
             return false;
         offset++;
+        return LookAheadArraySuffix(ref offset);
+    }
+
+    private bool LookAheadArraySuffix(ref int offset)
+    {
+        if (tokens.PeekAt(offset).Kind != TokenKind.OpenBracket)
+            return true;
+        if (tokens.PeekAt(offset + 1).Kind != TokenKind.CloseBracket)
+            return false;
+        offset += 2;
         return true;
     }
 
@@ -408,6 +420,8 @@ public sealed class CSharpParser : IScriptParser
         {
             name += "." + tokens.Expect(TokenKind.Identifier).Text;
         }
+        if (PackedArrayMappings.TryElement(name, out _))
+            throw new ParseException(PackedArrayMappings.StorageError(name), typeToken.Line, typeToken.Column);
         // GDScript has one float spelling; this tool deliberately maps it to C# float.
         if (name is "double" or "Double" or "System.Double")
             throw new ParseException("C# double is not supported; use float instead.", typeToken.Line, typeToken.Column);
@@ -426,7 +440,13 @@ public sealed class CSharpParser : IScriptParser
         }
         if (name == "Dictionary" && arguments.Count != 2)
             throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
-        return new TypeReference(name switch { "String" => "string", "long" => "int64", _ => name }, arguments);
+        var type = new TypeReference(name switch { "String" => "string", "long" => "int64", _ => name }, arguments);
+        if (tokens.TryConsume(TokenKind.OpenBracket))
+        {
+            tokens.Expect(TokenKind.CloseBracket);
+            return new TypeReference("ArrayBuffer", new List<TypeReference> { type });
+        }
+        return type;
     }
 
     // Recognize reserved generated signatures, then discard their C#-only implementation.
@@ -957,7 +977,13 @@ public sealed class CSharpParser : IScriptParser
     private void ParseUsing(string name)
     {
         tokens.Expect(TokenKind.Identifier, "using");
-        tokens.Expect(TokenKind.Identifier, name);
+        var parts = name.Split('.');
+        for (var index = 0; index < parts.Length; index++)
+        {
+            if (index > 0)
+                tokens.Expect(TokenKind.Dot);
+            tokens.Expect(TokenKind.Identifier, parts[index]);
+        }
         tokens.Expect(TokenKind.Semicolon);
         EndOfLine();
     }
