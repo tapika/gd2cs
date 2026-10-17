@@ -85,6 +85,27 @@ public partial class ControlFlow : RefCounted
 		}
 	}
 
+	public void iterateKeys(Godot.Collections.Dictionary<int, int> entries)
+	{
+		foreach (var key in entries.Keys)
+		{
+			accept(entries[key]);
+		}
+		foreach (int key in entries.Keys)
+		{
+			accept(key);
+		}
+	}
+
+	public void iterateEngineKeys(PhysicsDirectSpaceState3D state, PhysicsRayQueryParameters3D query)
+	{
+		var entries = state.IntersectRay(query);
+		foreach (var key in entries.Keys)
+		{
+			entries[key] = key;
+		}
+	}
+
 	public void inspectInput(InputEvent @event, bool enabled)
 	{
 		// Reserve the first generated pattern name to test collision handling.

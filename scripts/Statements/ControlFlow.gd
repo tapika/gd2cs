@@ -44,6 +44,17 @@ func iterate(callback: Callable):
 	for entry in entries:
 		accept(entry["count"] as int)
 
+func iterateKeys(entries: Dictionary[int, int]):
+	for key in entries:
+		accept(entries[key])
+	for key: int in entries:
+		accept(key)
+
+func iterateEngineKeys(state: PhysicsDirectSpaceState3D, query: PhysicsRayQueryParameters3D):
+	var entries := state.intersect_ray(query)
+	for key in entries:
+		entries[key] = key
+
 func inspectInput(event: InputEvent, enabled: bool):
 	# Reserve the first generated pattern name to test collision handling.
 	var eventTyped := 0

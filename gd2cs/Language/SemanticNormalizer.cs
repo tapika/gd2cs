@@ -386,8 +386,26 @@ internal sealed class SemanticNormalizer
     // An iterator annotation types the body, not the collection: Variant still needs a cast.
     private ForEachStatement NormalizeForEach(ForEachStatement statement, BindingScope scope)
     {
-        var collection = NormalizeExpression(statement.Collection, scope);
+        Expression collection;
+        var iteratesKeys = statement.IteratesDictionaryKeys;
+        // Unwrap .Keys only on a known dictionary and only in loop position. Other receivers
+        // may have a genuine Keys member; dictionary array extraction remains a separate operation.
+        if (language == ScriptLanguage.CSharp && statement.Collection is MemberAccessExpression { Member: "Keys" } member)
+        {
+            var receiver = NormalizeExpression(member.Target, scope);
+            iteratesKeys = ResolveType(receiver, scope)?.Kind == TypeKind.Dictionary;
+            collection = iteratesKeys ? receiver : NormalizeExpression(statement.Collection, scope);
+        }
+        else
+            collection = NormalizeExpression(statement.Collection, scope);
         var collectionType = ResolveType(collection, scope);
+        if (collectionType?.Kind == TypeKind.Dictionary)
+        {
+            if (language == ScriptLanguage.CSharp && !iteratesKeys)
+                throw SourceLocations.Error(statement.Collection,
+                    "Dictionary entry iteration is not supported; iterate dictionary.Keys instead.");
+            iteratesKeys = true;
+        }
         if (collectionType?.Kind == TypeKind.Variant)
             throw SourceLocations.Error(statement.Collection,
                 "Variant collections require an explicit cast before iteration; use 'value as Array[ElementType]' (C#: 'value.As<Godot.Collections.Array<ElementType>>()').");
@@ -402,6 +420,7 @@ internal sealed class SemanticNormalizer
             {
                 Collection = collection,
                 VariableType = explicitType,
+                IteratesDictionaryKeys = iteratesKeys,
                 Elements = NormalizeBody(statement.Elements, scope)
             };
         }

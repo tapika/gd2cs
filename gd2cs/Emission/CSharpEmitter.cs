@@ -842,6 +842,8 @@ public sealed class CSharpEmitter : IScriptEmitter
                     output.Append(statement.Variable);
                     output.Append(" in ");
                     EmitExpression(output, statement.Collection, indent);
+                    if (statement.IteratesDictionaryKeys)
+                        output.Append(".Keys");
                     output.AppendLine(")");
                     EmitBlock(output, statement.Elements, indent);
                     break;

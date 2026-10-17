@@ -454,11 +454,13 @@ public enum LocalTyping
 }
 
 // A null VariableType preserves inferred iteration (C# var); an explicit type binds the body.
+// Dictionary loops iterate keys, not C# KeyValuePair entries; Collection stores the dictionary itself.
 public sealed record ForEachStatement(
     string Variable,
     Expression Collection,
     List<SyntaxElement> Elements,
-    TypeReference? VariableType = null) : Statement;
+    TypeReference? VariableType = null,
+    bool IteratesDictionaryKeys = false) : Statement;
 
 // Repeats an ordered body while its condition remains true.
 public sealed record WhileStatement(

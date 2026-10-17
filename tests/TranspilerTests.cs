@@ -344,6 +344,19 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].IndexOf(token, StringComparison.Ordinal) + 1, error.Column);
     }
 
+    [Fact]
+    public void RejectDictionaryEntries()
+    {
+        var source = File.ReadAllText(Fixture("Statements/ControlFlow.cs"))
+            .Replace("foreach (var key in entries.Keys)", "foreach (var key in entries)");
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
+        Assert.Contains("iterate dictionary.Keys instead", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains("foreach (var key in entries)", StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf("entries", StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Theory]
     [InlineData("PackedVector2Array", "Vector2")]
     [InlineData("PackedVector3Array", "Vector3")]
