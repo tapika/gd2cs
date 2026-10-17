@@ -536,10 +536,24 @@ internal sealed class SemanticNormalizer
         return expression with { Left = left, Right = right };
     }
 
-    // Limit implicit truthiness conversion to bitmask expressions, not arbitrary numbers or objects.
+    // Callable results are Variants in C#, even when GDScript uses them directly as conditions.
+    // Fold only our contextual AsBool extraction, keeping arbitrary Variant methods unchanged.
     private Expression NormalizeBoolean(Expression expression, BindingScope scope)
     {
+        if (language == ScriptLanguage.CSharp && expression is InvocationExpression extraction
+            && extraction.Arguments.Arguments.Count == 0
+            && extraction.Target is MemberAccessExpression { Member: "AsBool" } member)
+        {
+            var value = NormalizeExpression(member.Target, scope);
+            if (value is CallableInvocationExpression)
+                return new CallableBooleanExpression(value);
+        }
         var normalized = NormalizeExpression(expression, scope);
+        if (normalized is CallableInvocationExpression)
+            return new CallableBooleanExpression(normalized);
+        if (normalized is ParenthesizedExpression grouped)
+            return grouped with { Expression = NormalizeBoolean(grouped.Expression, scope) };
+        // Other implicit truthiness conversions remain limited to numeric bitmasks.
         if (!ExpressionOperators.IsBitwise(normalized) || ResolveType(normalized, scope)?.Kind == TypeKind.Bool)
             return normalized;
         return new BitmaskConditionExpression(ExpressionOperators.BitmaskValue(normalized));
@@ -585,6 +599,14 @@ internal sealed class SemanticNormalizer
             CallableNullExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope)
+            },
+            CallableValidityExpression callable => callable with
+            {
+                Target = NormalizeExpression(callable.Target, scope)
+            },
+            CallableBooleanExpression callable => callable with
+            {
+                Value = NormalizeExpression(callable.Value, scope)
             },
             ObjectCreationExpression creation => creation with
             {
@@ -724,6 +746,12 @@ internal sealed class SemanticNormalizer
         else
             target = NormalizeExpression(invocation.Target, scope);
         var arguments = NormalizeArguments(invocation.Arguments, scope);
+        // The generated helper is a dialect detail. User declarations with that name are not helpers.
+        if (language == ScriptLanguage.CSharp && target is ValueExpression { Text: "gdCallableIsValid" }
+            && !scope.IsUserMethod("gdCallableIsValid") && scope.Resolve("gdCallableIsValid") is null
+            && arguments.Arguments.Count == 1
+            && ResolveType(arguments.Arguments[0].Value, scope)?.Kind == TypeKind.Callable)
+            return new CallableValidityExpression(arguments.Arguments[0].Value);
         /* Singleton APIs are exposed as qualified static calls in C#. Reflection establishes
            the owner and method identity; local/field/type shadowing is checked before lookup.
            Do not add these APIs to the global table or blindly PascalCase member names. */
@@ -785,6 +813,9 @@ internal sealed class SemanticNormalizer
             member.Member == "is_null" &&
             arguments.Arguments.Count == 0)
             return new CallableNullExpression(member.Target);
+        if (language == ScriptLanguage.GdScript && receiverType.Kind == TypeKind.Callable
+            && member.Member == "is_valid" && arguments.Arguments.Count == 0)
+            return new CallableValidityExpression(member.Target);
         if (receiverType.Kind == TypeKind.String &&
             StringMappings.TryInvocation(language, member.Member, arguments, out var stringOperation, out var stringArguments))
         {
@@ -1170,6 +1201,7 @@ internal sealed class SemanticNormalizer
         CallableInvocationExpression => new TypeReference("Variant"),
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
+        CallableValidityExpression or CallableBooleanExpression => new TypeReference("bool"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
         ValueExpression { Text: "true" or "false" } => new TypeReference("bool"),

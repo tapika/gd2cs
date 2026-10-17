@@ -399,6 +399,13 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(".call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
+            case CallableValidityExpression validity:
+                EmitExpression(output, validity.Target, indent);
+                output.Append(".is_valid()");
+                break;
+            case CallableBooleanExpression boolean:
+                EmitExpression(output, boolean.Value, indent);
+                break;
             case CallableNullExpression nullCheck:
                 EmitExpression(output, nullCheck.Target, indent);
                 output.Append(".is_null()");

@@ -9,6 +9,7 @@ public sealed class CSharpEmitter : IScriptEmitter
 {
     private readonly GodotTypeCatalog godotTypes;
     private bool requiresGdArray;
+    private bool requiresCallableValidity;
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
     private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
     private HashSet<string> occupiedNames = new(StringComparer.Ordinal);
@@ -21,6 +22,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     public string Emit(ScriptModel model)
     {
         requiresGdArray = false;
+        requiresCallableValidity = false;
         patternNames.Clear();
         occupiedNames = EventParameterConversions.Names(model.Elements);
         var output = new StringBuilder();
@@ -113,6 +115,8 @@ public sealed class CSharpEmitter : IScriptEmitter
         }
         if (isRoot && requiresGdArray)
             EmitGdArrayHelper(output, indent);
+        if (isRoot && requiresCallableValidity)
+            EmitCallableValidityHelper(output, indent);
         output.AppendLine(indent + "}");
     }
 
@@ -233,6 +237,16 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, callable.Target, indent);
                 output.Append(".Call");
                 EmitArguments(output, callable.Arguments, indent);
+                break;
+            case CallableValidityExpression validity:
+                requiresCallableValidity = true;
+                output.Append("gdCallableIsValid(");
+                EmitExpression(output, validity.Target, indent);
+                output.Append(')');
+                break;
+            case CallableBooleanExpression boolean:
+                EmitExpression(output, boolean.Value, indent);
+                output.Append(".AsBool()");
                 break;
             case CallableNullExpression nullCheck:
                 EmitExpression(output, nullCheck.Target, indent);
@@ -824,6 +838,24 @@ public sealed class CSharpEmitter : IScriptEmitter
         output.AppendLine(indent + "        var result = new Godot.Collections.Array<T>();");
         output.AppendLine(indent + "        foreach (var value in values) result.Add(value);");
         output.AppendLine(indent + "        return result;");
+        output.AppendLine(indent + "    }");
+    }
+
+    // Callable has no public IsValid API. Match the supported native callable representations:
+    // delegates may have no Godot target; standard callables require a live target and method.
+    // Passing by value evaluates a receiver expression exactly once, including in short-circuit tests.
+    private static void EmitCallableValidityHelper(StringBuilder output, string indent)
+    {
+        output.AppendLine();
+        output.AppendLine(indent + "    private static bool gdCallableIsValid(Callable callback)");
+        output.AppendLine(indent + "    {");
+        output.AppendLine(indent + "        // Callable.IsValid() is not exposed by Godot's C# API yet.");
+        output.AppendLine(indent + "        // Mirrors the supported cases of Callable::is_valid() and CallableCustom::is_valid():");
+        output.AppendLine(indent + "        // https://github.com/godotengine/godot/blob/master/core/variant/callable.cpp");
+        output.AppendLine(indent + "        // Managed delegates may target an ordinary object or no object at all.");
+        output.AppendLine(indent + "        if (callback.Delegate is not null)");
+        output.AppendLine(indent + "            return callback.Target is null || GodotObject.IsInstanceValid(callback.Target);");
+        output.AppendLine(indent + "        return GodotObject.IsInstanceValid(callback.Target) && callback.Target.HasMethod(callback.Method);");
         output.AppendLine(indent + "    }");
     }
 

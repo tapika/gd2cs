@@ -59,7 +59,7 @@ public sealed class CSharpParser : IScriptParser
             }
             if (tokens.Current.Text == "private")
             {
-                ParseGdArrayHelper();
+                ParseGeneratedHelper();
                 continue;
             }
             if (ParseTrivia(elements))
@@ -429,11 +429,39 @@ public sealed class CSharpParser : IScriptParser
         return new TypeReference(name switch { "String" => "string", "long" => "int64", _ => name }, arguments);
     }
 
-    // Consumes the generated gdArray helper without adding it to the script model.
-    private void ParseGdArrayHelper()
+    // Recognize reserved generated signatures, then discard their C#-only implementation.
+    private void ParseGeneratedHelper()
     {
         tokens.Expect(TokenKind.Identifier, "private");
         tokens.Expect(TokenKind.Identifier, "static");
+        if (tokens.TryConsume(TokenKind.Identifier, "bool"))
+        {
+            tokens.Expect(TokenKind.Identifier, "gdCallableIsValid");
+            tokens.Expect(TokenKind.OpenParenthesis);
+            tokens.Expect(TokenKind.Identifier, "Callable");
+            tokens.Expect(TokenKind.Identifier, "callback");
+            tokens.Expect(TokenKind.CloseParenthesis);
+        }
+        else
+            ParseGdArrayHelperSignature();
+        EndOfLine();
+        tokens.Expect(TokenKind.OpenBrace);
+        var depth = 1;
+        while (depth > 0)
+        {
+            if (tokens.Current.Kind == TokenKind.EndOfFile)
+                throw new ParseException("Unterminated generated helper", tokens.Current.Line, tokens.Current.Column);
+            if (tokens.Current.Kind == TokenKind.OpenBrace)
+                depth++;
+            else if (tokens.Current.Kind == TokenKind.CloseBrace)
+                depth--;
+            tokens.Expect(tokens.Current.Kind);
+        }
+        EndOfLine(optional: true);
+    }
+
+    private void ParseGdArrayHelperSignature()
+    {
         _ = ParseType();
         tokens.Expect(TokenKind.Identifier, "gdArray");
         tokens.Expect(TokenKind.LessThan);
@@ -449,18 +477,6 @@ public sealed class CSharpParser : IScriptParser
         tokens.Expect(TokenKind.CloseBracket);
         tokens.Expect(TokenKind.Identifier, "values");
         tokens.Expect(TokenKind.CloseParenthesis);
-        EndOfLine();
-        tokens.Expect(TokenKind.OpenBrace);
-        var depth = 1;
-        while (depth > 0)
-        {
-            if (tokens.Current.Kind == TokenKind.OpenBrace)
-                depth++;
-            else if (tokens.Current.Kind == TokenKind.CloseBrace)
-                depth--;
-            tokens.Expect(tokens.Current.Kind);
-        }
-        EndOfLine(optional: true);
     }
 
     private ArrayExpression ParseArray()

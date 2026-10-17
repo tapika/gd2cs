@@ -122,6 +122,12 @@ public sealed record CallableMethodGroupExpression(Expression Target, List<TypeR
 // Tests whether a Callable has no target independently of each language's API spelling.
 public sealed record CallableNullExpression(Expression Target) : Expression;
 
+// Validity checks the target/method or delegate lifetime, not merely whether a Callable is empty.
+public sealed record CallableValidityExpression(Expression Target) : Expression;
+
+// A Callable's Variant result used in a Boolean context needs explicit extraction only in C#.
+public sealed record CallableBooleanExpression(Expression Value) : Expression;
+
 // Represents a scalar conversion independently of each language's cast syntax.
 public sealed record ConversionExpression(
     TypeReference Type,
