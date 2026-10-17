@@ -118,9 +118,11 @@ public sealed class CSharpEmitter : IScriptEmitter
 
     private void EmitConstant(StringBuilder output, ConstantDeclaration constant, string indent)
     {
-        var isCollection = constant.Value is ArrayExpression or DictionaryExpression;
+        var isScalar = constant.Type.Kind is TypeKind.Bool or TypeKind.Int32 or TypeKind.Int64
+            or TypeKind.Float32 or TypeKind.String;
         output.Append(indent + "    public ");
-        output.Append(isCollection ? "static readonly " : "const ");
+        output.Append((isScalar || constant.Value is GodotEnumExpression) && IsConstantExpression(constant.Value)
+            ? "const " : "static readonly ");
         EmitType(output, constant.Type);
         output.Append(' ');
         output.Append(constant.Name);
@@ -128,6 +130,18 @@ public sealed class CSharpEmitter : IScriptEmitter
         EmitExpression(output, constant.Value, indent);
         output.AppendLine(";");
     }
+
+    // Constructors and calls are runtime initializers, even when GDScript accepts them as const.
+    // Keep scalar/enum constant expressions as C# const; use readonly for everything else.
+    private static bool IsConstantExpression(Expression expression) => expression switch
+    {
+        ValueExpression or GodotEnumExpression => true,
+        UnaryExpression unary => IsConstantExpression(unary.Operand),
+        BinaryExpression binary => IsConstantExpression(binary.Left) && IsConstantExpression(binary.Right),
+        ParenthesizedExpression parenthesized => IsConstantExpression(parenthesized.Expression),
+        ConversionExpression conversion => IsConstantExpression(conversion.Value),
+        _ => false
+    };
 
     private void EmitField(StringBuilder output, FieldDeclaration field, string indent)
     {

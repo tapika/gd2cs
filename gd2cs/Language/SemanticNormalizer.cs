@@ -90,6 +90,11 @@ internal sealed class SemanticNormalizer
         }
 
         var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType);
+        // Bind constant constructors before callable bodies, including methods declared earlier.
+        // Inference must follow binding: a raw Godot call has no result type until it is
+        // identified as construction using the reflected constructor catalog.
+        foreach (var constant in declaration.Elements.OfType<ConstantDeclaration>())
+            members[constant.Name] = NormalizeConstant(constant, scope).Type;
         /* Discover event-handler signatures before normalizing the final method bodies.
            Connections may follow their handler declarations, or occur inside nested blocks.
            A first binding pass uses normal lexical scopes to avoid matching shadowed names.
@@ -160,10 +165,7 @@ internal sealed class SemanticNormalizer
     private SyntaxElement NormalizeClassElement(SyntaxElement element, BindingScope scope) => element switch
     {
         SignalDeclaration signal => signal with { Parameters = NormalizeParameters(signal.Parameters, scope) },
-        ConstantDeclaration constant when constant.Value is DictionaryExpression => constant with
-        {
-            Value = NormalizeTypedValue(constant.Type, constant.Value, scope)!
-        },
+        ConstantDeclaration constant => NormalizeConstant(constant, scope),
         FieldDeclaration field => field with
         {
             Initializer = NormalizeTypedValue(field.Type, field.Initializer, scope)
@@ -185,6 +187,15 @@ internal sealed class SemanticNormalizer
         },
         _ => element
     };
+
+    private ConstantDeclaration NormalizeConstant(ConstantDeclaration constant, BindingScope scope)
+    {
+        var value = NormalizeTypedValue(constant.Type, constant.Value, scope)!;
+        var type = language == ScriptLanguage.GdScript && constant.IsInferred
+            ? ResolveType(value, scope) ?? constant.Type
+            : constant.Type;
+        return constant with { Type = NormalizeType(type, scope.UserTypes), Value = value };
+    }
 
     // Reuses root-class binding so nested classes receive their own member namespace.
     private NestedClassDeclaration NormalizeNestedClass(NestedClassDeclaration nested, BindingScope parentScope)

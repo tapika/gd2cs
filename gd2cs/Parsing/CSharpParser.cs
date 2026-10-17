@@ -108,7 +108,9 @@ public sealed class CSharpParser : IScriptParser
                 var field = ParseScalarAfterName(type, memberName);
                 if (field.Initializer is null)
                     throw new ParseException("A readonly constant requires a value", tokens.Current.Line, tokens.Current.Column);
-                elements.Add(new ConstantDeclaration(memberName, type, field.Initializer, false));
+                // Collection constants retain their explicit element/key/value types in GDScript.
+                elements.Add(new ConstantDeclaration(memberName, type, field.Initializer,
+                    field.Initializer is not (ArrayExpression or DictionaryExpression)));
                 continue;
             }
             elements.Add(tokens.Current.Kind == TokenKind.OpenParenthesis
@@ -350,14 +352,12 @@ public sealed class CSharpParser : IScriptParser
         var type = ParseType();
         var name = tokens.Expect(TokenKind.Identifier).Text;
         tokens.Expect(TokenKind.Equals);
-        var valueToken = tokens.Current;
-        tokens.Expect(valueToken.Kind);
+        var value = ParseExpression();
         tokens.Expect(TokenKind.Semicolon);
         EndOfLine();
-        var value = valueToken.Text.TrimEnd('f', 'F');
         return isConstant
-            ? new ConstantDeclaration(name, type, new ValueExpression(value), true)
-            : new FieldDeclaration(name, type, new ValueExpression(value), true);
+            ? new ConstantDeclaration(name, type, value, true)
+            : new FieldDeclaration(name, type, value, true);
     }
 
     // A type followed by a variable name distinguishes declarations from member calls
