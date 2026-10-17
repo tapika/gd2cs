@@ -112,6 +112,40 @@ public sealed class TranspilerTests
         Assert.Equal(File.ReadAllText(Fixture(baseName + ".gd")), gdscript);
     }
 
+    // Alias spelling and implicit numeric coercion canonicalize to the same fixture/model.
+    [Theory]
+    [InlineData("clampf(", "clamp(")]
+    [InlineData("clampi(", "clamp(")]
+    [InlineData("clampf(float(index),", "clampf(index,")]
+    [InlineData("clampi(int(value),", "clampi(value,")]
+    public void ClampAliases(string original, string replacement)
+    {
+        var gd = File.ReadAllText(Fixture("Expressions/MathFunctions.gd"));
+        var source = gd.Replace(original, replacement);
+        Assert.NotEqual(gd, source);
+        var transpiler = new Transpiler();
+        Assert.Equivalent(transpiler.Parse(gd, Language.ScriptLanguage.GdScript),
+            transpiler.Parse(source, Language.ScriptLanguage.GdScript), strict: true);
+        var cs = transpiler.Transpile(source, Language.ScriptLanguage.GdScript, Language.ScriptLanguage.CSharp);
+        Assert.Equal(File.ReadAllText(Fixture("Expressions/MathFunctions.cs")), cs);
+        Assert.Equal(gd, transpiler.Transpile(cs, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
+    }
+
+    [Theory]
+    [InlineData(".gd", "clampf(value, 0, 1)", "clampf(value, 0)")]
+    [InlineData(".cs", "Mathf.Clamp(value, 0, 1)", "Mathf.Clamp(value, 0)")]
+    public void RejectClampArity(string extension, string original, string replacement)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/MathFunctions" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("Clamp requires three arguments", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public void ScalarFormat()
     {

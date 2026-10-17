@@ -288,6 +288,10 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitInvocationTarget(output, invocation.Target, indent);
                 EmitArguments(output, invocation.Arguments, indent);
                 break;
+            case ClampExpression clamp:
+                output.Append(MathFunctionNames.ToCSharp("clamp"));
+                EmitArguments(output, clamp.Arguments, indent);
+                break;
             case GodotStaticMethodExpression method:
                 output.Append(godotTypes.StaticMethodName(method.Method, ScriptLanguage.CSharp));
                 EmitArguments(output, method.Arguments, indent);

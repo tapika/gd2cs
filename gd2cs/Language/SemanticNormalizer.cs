@@ -744,6 +744,11 @@ internal sealed class SemanticNormalizer
         else
             target = NormalizeExpression(invocation.Target, scope);
         var arguments = NormalizeArguments(invocation.Arguments, scope);
+        // Bind only global math calls; a same-named script method or local is not a built-in.
+        if (target is ValueExpression { Text: "clamp" or "clampf" or "clampi" } clamp
+            && !scope.IsUserMethod(clamp.Text) && scope.Resolve(clamp.Text) is null
+            && !scope.UserTypes.Contains(clamp.Text))
+            return NormalizeClamp(clamp.Text, arguments, invocation, scope);
         // Packed constructors are conversions, not mutable collection construction.
         // Require a known matching element type; never infer it from a name or an API destination.
         if (language == ScriptLanguage.GdScript && target is ValueExpression packed
@@ -861,6 +866,43 @@ internal sealed class SemanticNormalizer
         }
         // Unknown and user-defined receivers retain their original callable structure.
         return invocation with { Target = target, Arguments = arguments };
+    }
+
+    /* Clamp's typed GDScript variants and C# overloads share one model operation. Resolve
+       arguments after binding locals, parameters and members; spelling heuristics would
+       mistake an integer-looking variable name for an integer overload. A generic call
+       with insufficient type information stays generic rather than guessing its result.
+       Explicit typed calls may need scalar conversions so C# selects the same overload. */
+    private static ClampExpression NormalizeClamp(string name, ArgumentList arguments,
+        InvocationExpression source, BindingScope scope)
+    {
+        if (arguments.Arguments.Count != 3)
+            throw SourceLocations.Error(source, "Clamp requires three arguments: value, minimum and maximum.");
+        var types = arguments.Arguments.Select(argument => ResolveType(argument.Value, scope)).ToList();
+        var hasFloat = types.Any(type => type?.Kind is TypeKind.Float32 or TypeKind.Float64);
+        var allIntegers = types.All(type => type?.Kind is TypeKind.Int32 or TypeKind.Int64);
+        TypeReference? result = name switch
+        {
+            "clampf" => new TypeReference("float"),
+            "clampi" => new TypeReference("int"),
+            _ when hasFloat => new TypeReference("float"),
+            _ when allIntegers => new TypeReference(types.Any(type => type?.Kind == TypeKind.Int64) ? "int64" : "int"),
+            _ => null
+        };
+        // clampf(1, 0, 2) must not accidentally select C#'s integer overload.
+        // clampi with floating inputs truncates each input before clamping.
+        if ((name == "clampf" && !hasFloat) || (name == "clampi" && hasFloat))
+        {
+            arguments = arguments with
+            {
+                Arguments = arguments.Arguments.Select((argument, index) =>
+                    (name == "clampf" && index == 0
+                     || name == "clampi" && types[index]?.Kind is TypeKind.Float32 or TypeKind.Float64)
+                        ? argument with { Value = new ConversionExpression(result!, argument.Value) }
+                        : argument).ToList()
+            };
+        }
+        return new ClampExpression(arguments, result);
     }
 
     /* Bind signals through their class declarations, never by replacing every .emit call.
@@ -1219,6 +1261,7 @@ internal sealed class SemanticNormalizer
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
+        ClampExpression clamp => clamp.Type,
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
         CallableValidityExpression => new TypeReference("bool"),

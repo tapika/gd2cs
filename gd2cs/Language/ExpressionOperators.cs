@@ -43,6 +43,8 @@ internal static class ExpressionOperators
         MemberAccessExpression member => HasLineBreaks(member.Target),
         InvocationExpression call => call.Arguments.ClosingParenthesisStartsOnNewLine
             || call.Arguments.Arguments.Any(argument => argument.StartsOnNewLine || HasLineBreaks(argument.Value)),
+        ClampExpression clamp => clamp.Arguments.ClosingParenthesisStartsOnNewLine
+            || clamp.Arguments.Arguments.Any(argument => argument.StartsOnNewLine || HasLineBreaks(argument.Value)),
         _ => false
     };
 

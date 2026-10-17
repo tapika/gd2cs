@@ -44,6 +44,21 @@ public partial class MathFunctions : RefCounted
 		IntegerMaximum = Mathf.Max(2, Mathf.CeilToInt(value));
 	}
 
+	public void clampValues(float value, int index)
+	{
+		var lower = 0;
+		var upper = 10;
+		var boundedIndex = Mathf.Clamp(index, lower, upper);
+		var boundedValue = Mathf.Clamp(value, 0, 1);
+		var widened = Mathf.Clamp((float)(index), lower, upper);
+		var narrowed = Mathf.Clamp((int)(value), lower, upper);
+		IntegerMinimum = Mathf.Clamp(boundedIndex, lower, upper);
+		Limited = Mathf.Clamp(
+			Mathf.Clamp(boundedValue, 0, 1),
+			0.0f, 1.0f
+		);
+	}
+
 	public float constants()
 	{
 		var turn = Mathf.Tau;

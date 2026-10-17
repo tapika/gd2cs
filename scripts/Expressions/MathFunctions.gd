@@ -25,7 +25,7 @@ var IntegerMinimum := 0
 var IntegerMaximum := 0
 
 func evaluate(value: float):
-	Limited = clamp(float(value - 1.0), 0.0, 1.0)
+	Limited = clampf(float(value - 1.0), 0.0, 1.0)
 	Ceiling = ceili(value)
 	Rounded = roundi(value)
 	Minimum = minf(value, 1.0)
@@ -38,6 +38,19 @@ func evaluate(value: float):
 	Interpolated = lerpf(value, 1.0, 0.5)
 	IntegerMinimum = mini(2, ceili(value))
 	IntegerMaximum = maxi(2, ceili(value))
+
+func clampValues(value: float, index: int):
+	var lower := 0
+	var upper := 10
+	var boundedIndex := clampi(index, lower, upper)
+	var boundedValue := clampf(value, 0, 1)
+	var widened := clampf(float(index), lower, upper)
+	var narrowed := clampi(int(value), lower, upper)
+	IntegerMinimum = clampi(boundedIndex, lower, upper)
+	Limited = clampf(
+		clampf(boundedValue, 0, 1),
+		0.0, 1.0
+	)
 
 func constants() -> float:
 	var turn := TAU

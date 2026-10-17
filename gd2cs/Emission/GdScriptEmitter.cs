@@ -473,6 +473,15 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 EmitExpression(output, invocation.Target, indent);
                 EmitArguments(output, invocation.Arguments, indent);
                 break;
+            case ClampExpression clamp:
+                output.Append(clamp.Type?.Kind switch
+                {
+                    TypeKind.Float32 or TypeKind.Float64 => "clampf",
+                    TypeKind.Int32 or TypeKind.Int64 => "clampi",
+                    _ => "clamp"
+                });
+                EmitArguments(output, clamp.Arguments, indent);
+                break;
             case GodotStaticMethodExpression method:
                 output.Append(godotTypes.StaticMethodName(method.Method, ScriptLanguage.GdScript));
                 EmitArguments(output, method.Arguments, indent);

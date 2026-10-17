@@ -119,6 +119,9 @@ public sealed record CallableInvocationExpression(
     Expression Target,
     ArgumentList Arguments) : Expression;
 
+// Clamps a numeric value independently of dialect spelling; null retains an unresolved generic clamp.
+public sealed record ClampExpression(ArgumentList Arguments, TypeReference? Type) : Expression;
+
 // Gives a named void handler the signature required by C# Callable.From overload resolution.
 public sealed record CallableMethodGroupExpression(Expression Target, List<TypeReference> ParameterTypes) : Expression;
 
