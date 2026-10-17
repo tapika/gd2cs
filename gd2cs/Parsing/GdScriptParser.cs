@@ -477,9 +477,16 @@ public sealed class GdScriptParser : IScriptParser
             tokens.Expect(operatorToken.Kind, operatorToken.Text);
             var afterOperator = groupingDepth > 0 ? tokens.ConsumeLineBreaks() : 0;
             var right = ParseExpression(precedence + 1);
-            left = operatorToken.Kind == TokenKind.Percent && left is ValueExpression literal && right is ArrayExpression arguments
-                ? ParseInterpolatedString(literal.Text, arguments.Elements.Select(element => element.Value).ToList())
-                : new BinaryExpression(left, operatorToken.Text, right, beforeOperator, afterOperator);
+            if (operatorToken.Kind == TokenKind.Percent && left is ValueExpression literal && literal.Text.StartsWith('"'))
+            {
+                // Scalar and argument-list formatting share one model. Numeric % remains remainder.
+                var values = right is ArrayExpression arguments
+                    ? arguments.Elements.Select(element => element.Value).ToList()
+                    : new List<Expression> { right };
+                left = ParseInterpolatedString(literal.Text, values, operatorToken);
+            }
+            else
+                left = new BinaryExpression(left, operatorToken.Text, right, beforeOperator, afterOperator);
         }
         if (minimumPrecedence == 0 && tokens.TryConsume(TokenKind.Identifier, "if"))
         {
@@ -596,7 +603,7 @@ public sealed class GdScriptParser : IScriptParser
     }
 
     // Splits GDScript percent formatting into language-neutral text and value parts.
-    private InterpolatedStringExpression ParseInterpolatedString(string literal, List<Expression> values)
+    private InterpolatedStringExpression ParseInterpolatedString(string literal, List<Expression> values, Token formattingToken)
     {
         var parts = new List<InterpolationPart>();
         var text = new StringBuilder();
@@ -625,12 +632,14 @@ public sealed class GdScriptParser : IScriptParser
                 while (index < content.Length && char.IsDigit(content[index]))
                     index++;
                 if (precisionStart == index || index >= content.Length || content[index] != 'f')
-                    throw new NotSupportedException("Unsupported language dialect.");
+                    throw new ParseException("Unsupported string format specifier; use %s, %d, %i, %f or %.Nf.",
+                        formattingToken.Line, formattingToken.Column);
                 format = "F" + content[precisionStart..index];
             }
             else if (index >= content.Length || content[index] is not ('s' or 'd' or 'i' or 'f'))
             {
-                throw new NotSupportedException("Unsupported language dialect.");
+                throw new ParseException("Unsupported string format specifier; use %s, %d, %i, %f or %.Nf.",
+                    formattingToken.Line, formattingToken.Column);
             }
             else if (content[index] == 'f')
             {
@@ -638,14 +647,16 @@ public sealed class GdScriptParser : IScriptParser
             }
 
             if (valueIndex >= values.Count)
-                throw new NotSupportedException("Unsupported language dialect.");
+                throw new ParseException("String format has more placeholders than arguments.",
+                    formattingToken.Line, formattingToken.Column);
             // Integer placeholders normalize to %s because C# interpolation does not retain d versus i.
             parts.Add(new InterpolationValue(values[valueIndex++], format));
         }
         AddInterpolationText(parts, text);
         if (valueIndex != values.Count)
-            throw new NotSupportedException("Unsupported language dialect.");
-        return new InterpolatedStringExpression(parts);
+            throw new ParseException("String format has more arguments than placeholders.",
+                formattingToken.Line, formattingToken.Column);
+        return SourceLocations.Record(new InterpolatedStringExpression(parts), formattingToken);
     }
 
     private static void AddInterpolationText(List<InterpolationPart> parts, StringBuilder text)

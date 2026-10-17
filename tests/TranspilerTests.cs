@@ -113,6 +113,39 @@ public sealed class TranspilerTests
     }
 
     [Fact]
+    public void ScalarFormat()
+    {
+        var transpiler = new Transpiler();
+        var gd = File.ReadAllText(Fixture("Expressions/InterpolatedStrings.gd"));
+        var scalar = gd.Replace("% [text]", "% text")
+            .Replace("% [ratio]", "% ratio")
+            .Replace("% [(ratio + 1.0)]", "% (ratio + 1.0)");
+        Assert.Equivalent(transpiler.Parse(gd, Language.ScriptLanguage.GdScript),
+            transpiler.Parse(scalar, Language.ScriptLanguage.GdScript), strict: true);
+        Assert.Equal(File.ReadAllText(Fixture("Expressions/InterpolatedStrings.cs")),
+            transpiler.Transpile(scalar, Language.ScriptLanguage.GdScript, Language.ScriptLanguage.CSharp));
+    }
+
+    [Theory]
+    [InlineData("\"%q\" % ratio", "Unsupported string format specifier")]
+    [InlineData("\"%.f\" % ratio", "Unsupported string format specifier")]
+    [InlineData("\"%\" % ratio", "Unsupported string format specifier")]
+    [InlineData("\"%s %s\" % ratio", "more placeholders than arguments")]
+    [InlineData("\"%.1f\" % [ratio, ratio]", "more arguments than placeholders")]
+    [InlineData("\"plain\" % ratio", "more arguments than placeholders")]
+    public void RejectFormat(string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/InterpolatedStrings.gd"))
+            .Replace("\"%.1f units\" % [ratio]", replacement);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.Contains(message, error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(" % ", StringComparison.Ordinal) + 2, error.Column);
+    }
+
+    [Fact]
     public void SignalForms()
     {
         var transpiler = new Transpiler();
