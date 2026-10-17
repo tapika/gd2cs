@@ -136,6 +136,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private static bool IsConstantExpression(Expression expression) => expression switch
     {
         ValueExpression or GodotEnumExpression => true,
+        GodotStaticMemberExpression member => member.Member.Kind == GodotStaticMemberKind.Constant,
         UnaryExpression unary => IsConstantExpression(unary.Operand),
         BinaryExpression binary => IsConstantExpression(binary.Left) && IsConstantExpression(binary.Right),
         ParenthesizedExpression parenthesized => IsConstantExpression(parenthesized.Expression),
@@ -352,6 +353,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, member.Target, indent);
                 output.Append('.');
                 output.Append(member.Member);
+                break;
+            case GodotStaticMemberExpression member:
+                output.Append(godotTypes.StaticMemberName(member.Member, ScriptLanguage.CSharp));
                 break;
             case GodotMemberAccessExpression member:
                 EmitExpression(output, member.Target, indent);

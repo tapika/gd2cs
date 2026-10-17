@@ -83,6 +83,7 @@ public sealed class GodotTypeCatalog
     private GodotEnumCatalog enums = GodotEnumCatalog.CreateKnownBuiltIns();
     // Exact native/managed type aliases share the engine API snapshot used for enum binding.
     private GodotTypeNames typeNames = GodotTypeNames.CreateKnownBuiltIns();
+    private GodotStaticMembers staticMembers = GodotStaticMembers.CreateKnownBuiltIns();
     // Finds a property or field by concrete receiver type and GDScript name.
     private readonly Dictionary<string, Member> gdScriptMembers;
     // Finds a property or field by concrete receiver type and C# name.
@@ -244,7 +245,11 @@ public sealed class GodotTypeCatalog
         var assembly = Assembly.LoadFrom(assemblyPath);
         var catalog = FromAssembly(assembly);
         catalog.enums = GodotEnumCatalog.Load(assembly, executablePath,
-            api => catalog.typeNames = GodotTypeNames.FromApi(assembly, api));
+            api =>
+            {
+                catalog.typeNames = GodotTypeNames.FromApi(assembly, api);
+                catalog.staticMembers = GodotStaticMembers.FromApi(assembly, api, catalog.typeNames);
+            });
         return catalog;
     }
 
@@ -253,6 +258,14 @@ public sealed class GodotTypeCatalog
 
     public string EnumName(GodotEnumReference reference, ScriptLanguage language) =>
         enums.Name(reference, language);
+
+    public bool TryResolveStaticMember(string name, ScriptLanguage language, out GodotStaticMemberReference reference) =>
+        staticMembers.TryResolve(name, language, out reference);
+
+    public bool IsUnresolvedStaticMember(string name) => staticMembers.IsUnresolved(name);
+
+    public string StaticMemberName(GodotStaticMemberReference reference, ScriptLanguage language) =>
+        staticMembers.Name(reference, language);
 
     public bool TryResolveTypeName(string name, ScriptLanguage language, out string managed, out string native) =>
         typeNames.TryResolve(name, language, out managed, out native);
@@ -675,7 +688,7 @@ public sealed class GodotTypeCatalog
     }
 
     // Converts reflected CLR type names into the same canonical spellings used by both parsers.
-    private static TypeReference ToTypeReference(Type type)
+    internal static TypeReference ToTypeReference(Type type)
     {
         if (type.IsArray)
         {

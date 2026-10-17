@@ -336,6 +336,16 @@ public sealed record GodotMemberAccessExpression(
     Expression Target,
     GodotMemberReference Member) : Expression;
 
+// Static reads have no instance receiver; dialect-specific owners may differ as well as names.
+public sealed record GodotStaticMemberExpression(GodotStaticMemberReference Member) : Expression;
+
+// Reflection distinguishes true C# constants from runtime fields/properties for const emission.
+public enum GodotStaticMemberKind { Constant, ReadonlyField, Field, Property }
+
+// Stores managed identity and result type, not either dialect's qualified source spelling.
+public sealed record GodotStaticMemberReference(string DeclaringType, string Name, TypeReference ResultType,
+    GodotStaticMemberKind Kind);
+
 // Applies an index expression to another expression, including chained indexed access.
 public sealed record IndexExpression(
     Expression Target,

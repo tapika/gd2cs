@@ -502,6 +502,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append('.');
                 output.Append(member.Member);
                 break;
+            case GodotStaticMemberExpression member:
+                output.Append(godotTypes.StaticMemberName(member.Member, ScriptLanguage.GdScript));
+                break;
             case GodotMemberAccessExpression member:
                 EmitExpression(output, member.Target, indent);
                 output.Append('.');

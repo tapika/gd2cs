@@ -4,6 +4,25 @@ extends RefCounted
 var Bounds : AABB
 var BoundsList : Array[AABB]
 
+var Origin := Vector3.ZERO
+var Orientation := Quaternion.IDENTITY
+var Pointer := Vector2.ZERO
+var Unit := Vector2.ONE
+var Transform := Transform3D.IDENTITY
+const Tint := Color.RED
+const ReadyNotification := Node.NOTIFICATION_READY
+
+func staticValues() -> float:
+	var direction := Vector2.RIGHT
+	var origin := Vector3.ZERO
+	return direction.x + origin.y + Origin.z
+
+class StaticSource:
+	var ZERO := 7
+
+func shadow(Vector3: StaticSource) -> int:
+	return Vector3.ZERO
+
 func create() -> Vector3:
 	var point2 := Vector2(1.0, 2.0)
 	var point3 := Vector3(1.0, 2.0, 3.0)

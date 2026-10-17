@@ -7,6 +7,31 @@ public partial class BuiltInValues : RefCounted
 	public Aabb Bounds;
 	public Godot.Collections.Array<Aabb> BoundsList = new Godot.Collections.Array<Aabb>();
 
+	public Vector3 Origin = Vector3.Zero;
+	public Quaternion Orientation = Quaternion.Identity;
+	public Vector2 Pointer = Vector2.Zero;
+	public Vector2 Unit = Vector2.One;
+	public Transform3D Transform = Transform3D.Identity;
+	public static readonly Color Tint = Colors.Red;
+	public const long ReadyNotification = Node.NotificationReady;
+
+	public float staticValues()
+	{
+		var direction = Vector2.Right;
+		var origin = Vector3.Zero;
+		return direction.X + origin.Y + Origin.Z;
+	}
+
+	public partial class StaticSource : RefCounted
+	{
+		public int ZERO = 7;
+	}
+
+	public int shadow(StaticSource Vector3)
+	{
+		return Vector3.ZERO;
+	}
+
 	public Vector3 create()
 	{
 		var point2 = new Vector2(1.0f, 2.0f);

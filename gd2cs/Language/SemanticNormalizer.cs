@@ -90,11 +90,28 @@ internal sealed class SemanticNormalizer
         }
 
         var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType);
-        // Bind constant constructors before callable bodies, including methods declared earlier.
-        // Inference must follow binding: a raw Godot call has no result type until it is
-        // identified as construction using the reflected constructor catalog.
-        foreach (var constant in declaration.Elements.OfType<ConstantDeclaration>())
-            members[constant.Name] = NormalizeConstant(constant, scope).Type;
+        // Inference follows binding: constructors and static reads acquire their result
+        // types from metadata. Resolve class-wide declarations before any method body.
+        // Revisit forward dependencies until types stabilize, bounded by declaration count.
+        var values = declaration.Elements.Where(element => element is ConstantDeclaration or FieldDeclaration).ToList();
+        for (var pass = 0; pass < values.Count; pass++)
+        {
+            var changed = false;
+            foreach (var value in values)
+            {
+                var bound = NormalizeClassElement(value, scope);
+                var (name, type) = bound switch
+                {
+                    ConstantDeclaration constant => (constant.Name, constant.Type),
+                    FieldDeclaration field => (field.Name, field.Type),
+                    _ => throw new InvalidOperationException("Expected a value declaration.")
+                };
+                changed |= !SameHandlerType(members[name], type);
+                members[name] = type;
+            }
+            if (!changed)
+                break;
+        }
         /* Discover event-handler signatures before normalizing the final method bodies.
            Connections may follow their handler declarations, or occur inside nested blocks.
            A first binding pass uses normal lexical scopes to avoid matching shadowed names.
@@ -166,10 +183,7 @@ internal sealed class SemanticNormalizer
     {
         SignalDeclaration signal => signal with { Parameters = NormalizeParameters(signal.Parameters, scope) },
         ConstantDeclaration constant => NormalizeConstant(constant, scope),
-        FieldDeclaration field => field with
-        {
-            Initializer = NormalizeTypedValue(field.Type, field.Initializer, scope)
-        },
+        FieldDeclaration field => NormalizeField(field, scope),
         NestedClassDeclaration nested => NormalizeNestedClass(nested, scope),
         ConstructorDeclaration constructor => constructor with
         {
@@ -195,6 +209,16 @@ internal sealed class SemanticNormalizer
             ? ResolveType(value, scope) ?? constant.Type
             : constant.Type;
         return constant with { Type = NormalizeType(type, scope.UserTypes), Value = value };
+    }
+
+    // C# declarations remain authoritative; only inferred GDScript fields adopt bound result types.
+    private FieldDeclaration NormalizeField(FieldDeclaration field, BindingScope scope)
+    {
+        var initializer = NormalizeTypedValue(field.Type, field.Initializer, scope);
+        var type = language == ScriptLanguage.GdScript && field.IsInferred
+            ? ResolveType(initializer, scope) ?? field.Type
+            : field.Type;
+        return field with { Type = NormalizeType(type, scope.UserTypes), Initializer = initializer };
     }
 
     // Reuses root-class binding so nested classes receive their own member namespace.
@@ -1010,6 +1034,8 @@ internal sealed class SemanticNormalizer
     {
         if (TryNormalizeEnum(member, scope, out var constant))
             return constant;
+        if (TryNormalizeStaticMember(member, scope, out var staticMember))
+            return staticMember;
         var target = NormalizeExpression(member.Target, scope);
         var receiverType = ResolveType(target, scope);
         // Dictionary dot access is a string-key lookup, never a reflected object member.
@@ -1031,6 +1057,39 @@ internal sealed class SemanticNormalizer
             return new GodotMemberAccessExpression(target, reference);
         }
         return member with { Target = target };
+    }
+
+    // Bind qualified type owners only after lexical shadowing checks; instances keep their own members.
+    private bool TryNormalizeStaticMember(Expression expression, BindingScope scope, out Expression result)
+    {
+        result = null!;
+        var parts = new List<string>();
+        var root = expression;
+        while (root is MemberAccessExpression member)
+        {
+            parts.Insert(0, member.Member);
+            root = member.Target;
+        }
+        if (root is not ValueExpression owner || scope.Resolve(owner.Text) is not null
+            || scope.IsUserMethod(owner.Text) || scope.UserTypes.Contains(owner.Text))
+            return false;
+        parts.Insert(0, owner.Text);
+        // Fully qualified C# names must honor user-type shadowing after the namespace too.
+        if (language == ScriptLanguage.CSharp && parts.Count > 2 && parts[0] == "Godot"
+            && scope.UserTypes.Contains(parts[1]))
+            return false;
+        var name = string.Join('.', parts);
+        if (godotTypes.TryResolveStaticMember(name, language, out var reference))
+        {
+            result = new GodotStaticMemberExpression(reference with
+            {
+                ResultType = NormalizeType(reference.ResultType, scope.UserTypes)
+            });
+            return true;
+        }
+        if (language == ScriptLanguage.GdScript && godotTypes.IsUnresolvedStaticMember(name))
+            throw SourceLocations.Error(expression, $"Godot static member '{name}' has no unique C# counterpart in the loaded API.");
+        return false;
     }
 
     private bool TryNormalizeEnum(Expression expression, BindingScope scope, out Expression constant)
@@ -1135,6 +1194,7 @@ internal sealed class SemanticNormalizer
             ? collectionType.TypeArguments.ElementAtOrDefault(collectionType.Kind == TypeKind.Dictionary ? 1 : 0)
             : null,
         GodotMemberAccessExpression member => member.Member.ResultType,
+        GodotStaticMemberExpression member => member.Member.ResultType,
         GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
         CollectionOperationExpression { Operation: CollectionOperation.Count or CollectionOperation.IndexOf } => new TypeReference("int"),
         CollectionOperationExpression { Operation: CollectionOperation.IsEmpty or CollectionOperation.ContainsValue or CollectionOperation.ContainsKey } => new TypeReference("bool"),
