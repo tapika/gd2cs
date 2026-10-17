@@ -45,6 +45,10 @@ public static class CliApplication
         {
             Description = "Backtranslate the C# scripts to GDScript after each C# build."
         };
+        var undoOption = new Option<bool>("--undo")
+        {
+            Description = "Reactivate existing GDScript files without transpiling; only the main script's references may change."
+        };
 
         var command = new RootCommand("Translate Godot scripts between GDScript and C#.");
         command.Options.Add(projectOption);
@@ -55,6 +59,7 @@ public static class CliApplication
         command.Options.Add(resetOption);
         command.Options.Add(scriptOnlyOption);
         command.Options.Add(postBuildOption);
+        command.Options.Add(undoOption);
         command.SetAction(parseResult => Execute(() => Run(
                 parseResult,
                 projectOption,
@@ -65,6 +70,7 @@ public static class CliApplication
                 resetOption,
                 scriptOnlyOption,
                 postBuildOption,
+                undoOption,
                 godotTypes)));
         return command;
     }
@@ -104,6 +110,7 @@ public static class CliApplication
         Option<bool> resetOption,
         Option<bool> scriptOnlyOption,
         Option<bool> postBuildOption,
+        Option<bool> undoOption,
         GodotTypeCatalog? godotTypes)
     {
         var project = parseResult.GetValue(projectOption)!;
@@ -123,6 +130,15 @@ public static class CliApplication
         if (!File.Exists(Path.Combine(project.FullName, "project.godot")))
             throw new InvalidOperationException("--project does not contain project.godot.");
 
+        // Undo must bypass Git reset, parsers and Godot discovery, including when C# cannot compile.
+        if (parseResult.GetValue(undoOption))
+        {
+            if (target is not null || scriptOnly || postBuild || parseResult.GetValue(resetOption))
+                throw new ArgumentException("--undo cannot be combined with --to, --scriptonly, --postbuild or --reset-before.");
+            Undo(project.FullName, scripts, parseResult.GetValue(verboseOption));
+            return 0;
+        }
+
         if (parseResult.GetValue(resetOption) && !scriptOnly)
             ResetProject(project.FullName);
 
@@ -140,16 +156,7 @@ public static class CliApplication
             var targetExtension = outputLanguage == "cs" ? ".cs" : ".gd";
             foreach (var script in scripts)
             {
-                var resourceRelativeScript = script.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
-                    ? script[6..]
-                    : script;
-                var relativeScript = resourceRelativeScript.Replace('/', Path.DirectorySeparatorChar);
-                var scriptWithoutExtension = Path.ChangeExtension(relativeScript, null);
-                var scriptDirectory = relativeScript.Contains(Path.DirectorySeparatorChar)
-                    ? project.FullName
-                    : Path.Combine(project.FullName, "scripts");
-                var basePath = Path.Combine(scriptDirectory, scriptWithoutExtension);
-                var paths = ResolvePaths(project.FullName, basePath, scriptWithoutExtension, sourceExtension, targetExtension);
+                var paths = ResolveScriptPaths(project.FullName, script, sourceExtension, targetExtension);
                 var sourcePath = paths.Source;
                 var targetPath = paths.Target;
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
@@ -193,6 +200,60 @@ public static class CliApplication
         }
 
         return 0;
+    }
+
+    // Reactivates files, not historical contents: user edits in both language versions survive.
+    private static void Undo(string projectPath, List<string> scripts, bool verbose)
+    {
+        var integration = new GodotProjectIntegration(projectPath);
+        if (!integration.IsCSharpProject())
+            throw new InvalidOperationException("--undo only switches C# projects back to GDScript; this project is already using GDScript.");
+        var selections = new List<(string Source, string Target, bool IsPaired)>();
+        foreach (var script in scripts)
+        {
+            var paths = ResolveScriptPaths(projectPath, script, ".cs", ".gd");
+            // C# output may be absent after a failed translation; locate the existing GDScript instead.
+            if (!File.Exists(paths.Target))
+            {
+                var original = ResolveScriptPaths(projectPath, script, ".gd", ".cs");
+                paths = (original.Target, original.Source, original.IsPaired);
+            }
+            integration.ToResourcePath(paths.Source);
+            integration.ToResourcePath(paths.Target);
+            if (!File.Exists(paths.Target))
+                throw new FileNotFoundException("--undo requires an existing .gd file; backups are not restored automatically: " + paths.Target);
+            selections.Add(paths);
+        }
+        // Resolve and validate every input before changing project references or active folders.
+        var mainScript = integration.ResolveMainScript();
+        foreach (var paths in selections)
+        {
+            var source = integration.ToResourcePath(paths.Source);
+            var target = integration.ToResourcePath(paths.Target);
+            var changed = integration.RewriteReferences(source, target);
+            if (mainScript is not null)
+                integration.RewriteScriptReferences(source, target, [mainScript]);
+            if (paths.IsPaired)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.Source)!);
+                ActivateFolder(Path.GetDirectoryName(paths.Source)!, Path.GetDirectoryName(paths.Target)!);
+            }
+            Console.WriteLine($"Reactivated {target} without transpiling.");
+            if (verbose)
+                Console.WriteLine($"Updated {changed.Count} project resource file(s).");
+        }
+        integration.ReplaceCSharpFeature(enabled: false);
+        integration.ClearGodotCSharpCaches();
+    }
+
+    private static (string Source, string Target, bool IsPaired) ResolveScriptPaths(
+        string projectPath, string script, string sourceExtension, string targetExtension)
+    {
+        var resourceRelativeScript = script.StartsWith("res://", StringComparison.OrdinalIgnoreCase) ? script[6..] : script;
+        var relativeScript = resourceRelativeScript.Replace('/', Path.DirectorySeparatorChar);
+        var scriptWithoutExtension = Path.ChangeExtension(relativeScript, null);
+        var directory = relativeScript.Contains(Path.DirectorySeparatorChar) ? projectPath : Path.Combine(projectPath, "scripts");
+        return ResolvePaths(projectPath, Path.Combine(directory, scriptWithoutExtension), scriptWithoutExtension, sourceExtension, targetExtension);
     }
 
     private static (string Source, string Target, bool IsPaired) ResolvePaths(

@@ -98,22 +98,26 @@ public sealed class GodotProjectIntegration
     }
 
     // Updates GDScript preload/load declarations that embed the translated script path.
-    public List<string> RewriteScriptReferences(string sourceResourcePath, string targetResourcePath)
+    public List<string> RewriteScriptReferences(string sourceResourcePath, string targetResourcePath, List<string>? scriptFiles = null)
     {
         var changed = new List<string>();
         var pattern = $@"(?<loader>preload|load)\(""{Regex.Escape(sourceResourcePath)}""\)";
-        foreach (var file in Directory.EnumerateFiles(projectPath, "*.*", SearchOption.AllDirectories)
-                     .Where(path => path.EndsWith(".gd", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
+        var files = scriptFiles ?? Directory.EnumerateFiles(projectPath, "*.*", SearchOption.AllDirectories)
+            .Where(path => path.EndsWith(".gd", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).ToList();
+        foreach (var file in files)
         {
             var content = File.ReadAllText(file);
             var replacement = targetResourcePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
                 ? "load(\"" + targetResourcePath + "\")"
                 : "preload(\"" + targetResourcePath + "\")";
             var updated = Regex.Replace(content, pattern, replacement, RegexOptions.IgnoreCase);
+            if (updated == content)
+                continue;
             var targetKeyword = targetResourcePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ? "var" : "const";
+            // Change declaration keywords only for this resource, not unrelated script loaders.
             updated = Regex.Replace(
                 updated,
-                @"(?m)^(?<indent>\s*)(?<keyword>const|var)(?<rest>\s+\w+\s*:=\s*(?:load|preload)\()",
+                $@"(?m)^(?<indent>[ \t]*)(?:const|var)(?<rest>[ \t]+\w+[ \t]*:=[ \t]*(?:load|preload)\(""{Regex.Escape(targetResourcePath)}""\))",
                 $"${{indent}}{targetKeyword}${{rest}}");
             if (updated == content)
                 continue;
@@ -121,6 +125,57 @@ public sealed class GodotProjectIntegration
             changed.Add(file);
         }
         return changed;
+    }
+
+    // Only the script attached to the main scene's root may be rewritten during --undo.
+    // Resolve its ext_resource ID rather than guessing a filename such as main.gd.
+    public string? ResolveMainScript()
+    {
+        var config = File.ReadAllText(Path.Combine(projectPath, "project.godot"));
+        var main = Regex.Match(config, @"(?m)^run/main_scene\s*=\s*""(?<path>[^""]+)""");
+        if (!main.Success)
+            return null;
+        var sceneReference = main.Groups["path"].Value;
+        string scenePath;
+        if (sceneReference.StartsWith("uid://", StringComparison.Ordinal))
+        {
+            // Godot also stores run/main_scene by UID; match the text scene's own header.
+            scenePath = ProjectResourceFiles().FirstOrDefault(path => path.EndsWith(".tscn", StringComparison.OrdinalIgnoreCase)
+                && Regex.IsMatch(File.ReadAllText(path), $@"\A\[gd_scene[^\]\r\n]*\buid=""{Regex.Escape(sceneReference)}"""))
+                ?? throw new InvalidOperationException("Cannot resolve the main scene UID for --undo: " + sceneReference);
+        }
+        else
+            scenePath = ResourceFilePath(sceneReference);
+        var scene = File.ReadAllText(scenePath);
+        var root = Regex.Match(scene, @"(?ms)^\[node\b[^\]\r\n]*\](?<body>.*?)(?=^\[|\z)");
+        var script = Regex.Match(root.Groups["body"].Value, @"(?m)^script\s*=\s*ExtResource\(""(?<id>[^""]+)""\)");
+        if (!script.Success)
+            return null;
+        foreach (Match resource in Regex.Matches(scene, @"(?m)^\[ext_resource(?<attributes>[^\]\r\n]*)\]"))
+        {
+            var attributes = resource.Groups["attributes"].Value;
+            if (!Regex.IsMatch(attributes, "(?:^|\\s)type=\"Script\"(?:\\s|$)")
+                || !Regex.IsMatch(attributes, $@"(?:^|\s)id=""{Regex.Escape(script.Groups["id"].Value)}""(?:\s|$)"))
+                continue;
+            var path = Regex.Match(attributes, @"(?:^|\s)path=""(?<path>[^""]+)""");
+            if (!path.Success)
+                break;
+            var scriptPath = ResourceFilePath(path.Groups["path"].Value);
+            if (!File.Exists(scriptPath))
+                throw new FileNotFoundException("The main scene's script does not exist: " + scriptPath);
+            return scriptPath;
+        }
+        throw new InvalidOperationException("Cannot resolve the main scene's script resource for --undo.");
+    }
+
+    // Validate resource paths before any undo writes, including paths supplied by project text files.
+    private string ResourceFilePath(string resourcePath)
+    {
+        if (!resourcePath.StartsWith("res://", StringComparison.Ordinal))
+            throw new InvalidOperationException("Expected a project resource path: " + resourcePath);
+        var path = Path.GetFullPath(Path.Combine(projectPath, resourcePath[6..].Replace('/', Path.DirectorySeparatorChar)));
+        ToResourcePath(path);
+        return path;
     }
 
     // Removes generated C# metadata that can otherwise keep stale script registrations alive.

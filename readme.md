@@ -27,6 +27,16 @@ Pass multiple names or paths separated by commas: `--scripts myscript,otherscrip
 
 This is done in case if you need to transpile `.cs` back to `.gd`, for example for web export.
 
+## Undo project integration
+
+To return to the existing GDScript versions without transpiling:
+
+```text
+gd2cs --project <project> --scripts myscript,otherscript --undo
+```
+
+`--undo` switches project/scene references back to `.gd`, removes the C# project feature, clears generated C# caches, and activates the GDScript folders through `.gdignore`. Only the script attached to the main scene's root may have its loader references updated; all other `.gd` and `.cs` files remain unchanged, even if the C# version does not compile. C# project/solution files are retained.
+
 ## Build backtranslation
 
 Add `--postbuild` when translating GDScript to C#:
