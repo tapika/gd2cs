@@ -17,12 +17,12 @@ func replace():
 		self.Value = 1
 
 func predicate(callback: Callable, value: int) -> bool:
-	return callback.is_valid() and callback.call(value)
+	return callback.is_valid() and (callback.call(value) as bool)
 
 func testValidity() -> bool:
 	var callback := func (value: int) -> bool: return value > 0
 	if callback.is_valid():
-		return callback.call(1)
+		return callback.call(1) as bool
 	return false
 
 func evaluate(offset: int) -> Variant:

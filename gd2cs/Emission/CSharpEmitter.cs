@@ -244,10 +244,6 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, validity.Target, indent);
                 output.Append(')');
                 break;
-            case CallableBooleanExpression boolean:
-                EmitExpression(output, boolean.Value, indent);
-                output.Append(".AsBool()");
-                break;
             case CallableNullExpression nullCheck:
                 EmitExpression(output, nullCheck.Target, indent);
                 output.Append(".Delegate is null");

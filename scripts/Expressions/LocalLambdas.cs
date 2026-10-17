@@ -31,7 +31,7 @@ public partial class LocalLambdas : RefCounted
 
 	public bool predicate(Callable callback, int value)
 	{
-		return gdCallableIsValid(callback) && callback.Call(value).AsBool();
+		return gdCallableIsValid(callback) && callback.Call(value).As<bool>();
 	}
 
 	public bool testValidity()
@@ -39,7 +39,7 @@ public partial class LocalLambdas : RefCounted
 		var callback = Callable.From<int, bool>((int value) => value > 0);
 		if (gdCallableIsValid(callback))
 		{
-			return callback.Call(1).AsBool();
+			return callback.Call(1).As<bool>();
 		}
 		return false;
 	}

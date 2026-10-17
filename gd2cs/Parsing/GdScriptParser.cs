@@ -549,15 +549,16 @@ public sealed class GdScriptParser : IScriptParser
             return ParseLambda(tokens.Current.Column);
         if (tokens.Current.Kind == TokenKind.OpenBracket)
             return ParseArray();
-        if (tokens.TryConsume(TokenKind.OpenParenthesis))
+        if (tokens.Current.Kind == TokenKind.OpenParenthesis)
         {
+            var opening = tokens.Expect(TokenKind.OpenParenthesis);
             groupingDepth++;
             var openingLineBreaks = tokens.ConsumeLineBreaks();
             var grouped = ParseExpression();
             var closingLineBreaks = tokens.ConsumeLineBreaks();
             tokens.Expect(TokenKind.CloseParenthesis);
             groupingDepth--;
-            return new ParenthesizedExpression(grouped, openingLineBreaks, closingLineBreaks);
+            return SourceLocations.Record(new ParenthesizedExpression(grouped, openingLineBreaks, closingLineBreaks), opening);
         }
         var value = tokens.Current;
         tokens.Expect(value.Kind);

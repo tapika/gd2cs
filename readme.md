@@ -160,6 +160,16 @@ var offset := entry["offset"] as Vector3
 
 C# uses `entry["node"].AsGodotObject() as Node` for object casts and `entry["offset"].As<Vector3>()` for value extraction. gd2cs reports the uncast read's location and suggests `as Type`; it does not guess types from dictionary keys. Dictionary writes and reads whose declared value type is already concrete do not require casts.
 
+### Callable results in Boolean expressions
+
+`Callable.call()` returns `Variant`, even if its target function declares a `bool` return type. gd2cs requires an explicit `as bool` cast before using that result as a condition, logical operand, or Boolean return/assignment:
+
+```gdscript
+return callback.is_valid() and (callback.call(value) as bool)
+```
+
+This emits `gdCallableIsValid(callback) && callback.Call(value).As<bool>()` in C#. The cast is preserved on backtranslation; gd2cs does not insert implicit Boolean extraction or generate `AsBool()`. Uncast Variant conditions produce a source-located error suggesting the conversion, including when the Variant is stored in a local. Calls used as statements or returned as `Variant` do not require a cast. Validity checks remain separate from result conversion.
+
 ### Empty array literals
 
 `gd2cs` requires array literals to contain at least one element. Empty literals such as `var values := []` and `var values : Array[int] = []` are rejected. For an initially empty array, declare its type without an initializer:

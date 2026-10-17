@@ -225,6 +225,28 @@ public sealed class TranspilerTests
         }
     }
 
+    [Theory]
+    [InlineData(".gd", "return callback.call(1) as bool", "return callback.call(1)", "callback.call(1)")]
+    [InlineData(".gd", "if callback.is_valid():", "if callback.call(1):", "callback.call(1)")]
+    [InlineData(".gd", "if callback.is_valid():", "if not callback.call(1):", "callback.call(1)")]
+    [InlineData(".gd", "callback.call(value) as bool", "callback.call(value)", "(callback.call(value))")]
+    [InlineData(".gd", "return callback.call(1) as bool", "var result := callback.call(1)\n\t\treturn result", "return result")]
+    [InlineData(".cs", "return callback.Call(1).As<bool>()", "return callback.Call(1)", "callback.Call(1)")]
+    [InlineData(".cs", "if (gdCallableIsValid(callback))", "if (callback.Call(1))", "callback.Call(1)")]
+    public void RejectVariantConditions(string extension, string original, string replacement, string offending)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/LocalLambdas" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("require an explicit cast", error.Message);
+        Assert.Contains("as bool", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(offending, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        var token = offending == "return result" ? "result" : offending;
+        Assert.Equal(lines[line].IndexOf(token, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public static void CheckDictionaryReads()
     {

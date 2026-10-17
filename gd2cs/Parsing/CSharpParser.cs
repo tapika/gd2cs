@@ -647,15 +647,16 @@ public sealed class CSharpParser : IScriptParser
             return ParseConversion();
         if (IsLambda())
             return ParseLambda(new List<TypeReference>());
-        if (tokens.TryConsume(TokenKind.OpenParenthesis))
+        if (tokens.Current.Kind == TokenKind.OpenParenthesis)
         {
+            var opening = tokens.Expect(TokenKind.OpenParenthesis);
             groupingDepth++;
             var openingLineBreaks = tokens.ConsumeLineBreaks();
             var grouped = ParseExpression();
             var closingLineBreaks = tokens.ConsumeLineBreaks();
             tokens.Expect(TokenKind.CloseParenthesis);
             groupingDepth--;
-            return new ParenthesizedExpression(grouped, openingLineBreaks, closingLineBreaks);
+            return SourceLocations.Record(new ParenthesizedExpression(grouped, openingLineBreaks, closingLineBreaks), opening);
         }
         if (tokens.Current.Text == "new")
         {

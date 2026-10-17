@@ -125,9 +125,6 @@ public sealed record CallableNullExpression(Expression Target) : Expression;
 // Validity checks the target/method or delegate lifetime, not merely whether a Callable is empty.
 public sealed record CallableValidityExpression(Expression Target) : Expression;
 
-// A Callable's Variant result used in a Boolean context needs explicit extraction only in C#.
-public sealed record CallableBooleanExpression(Expression Value) : Expression;
-
 // Represents a scalar conversion independently of each language's cast syntax.
 public sealed record ConversionExpression(
     TypeReference Type,
@@ -148,7 +145,7 @@ public sealed record TypeCheckExpression(Expression Value, TypeReference Type, b
 // C# uses the corresponding pattern variable; GDScript retains the original variable spelling.
 public sealed record NarrowedValueExpression(ValueExpression Value, TypeReference Type, TypeCheckExpression Test) : Expression;
 
-// Extracts a concrete dictionary value from Variant; object casts retain null-on-mismatch semantics.
+// Extracts a concrete value from Variant (dictionary reads or Callable results); object casts retain null-on-mismatch semantics.
 public sealed record VariantCastExpression(TypeReference Type, Expression Value, bool IsObjectCast = false) : Expression;
 
 // Represents construction while retaining whether Godot treats the type as a built-in value.

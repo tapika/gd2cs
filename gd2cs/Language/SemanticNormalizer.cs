@@ -536,23 +536,13 @@ internal sealed class SemanticNormalizer
         return expression with { Left = left, Right = right };
     }
 
-    // Callable results are Variants in C#, even when GDScript uses them directly as conditions.
-    // Fold only our contextual AsBool extraction, keeping arbitrary Variant methods unchanged.
+    // Do not guess a Callable's result type: Boolean contexts require an explicit Variant cast.
     private Expression NormalizeBoolean(Expression expression, BindingScope scope)
     {
-        if (language == ScriptLanguage.CSharp && expression is InvocationExpression extraction
-            && extraction.Arguments.Arguments.Count == 0
-            && extraction.Target is MemberAccessExpression { Member: "AsBool" } member)
-        {
-            var value = NormalizeExpression(member.Target, scope);
-            if (value is CallableInvocationExpression)
-                return new CallableBooleanExpression(value);
-        }
         var normalized = NormalizeExpression(expression, scope);
-        if (normalized is CallableInvocationExpression)
-            return new CallableBooleanExpression(normalized);
-        if (normalized is ParenthesizedExpression grouped)
-            return grouped with { Expression = NormalizeBoolean(grouped.Expression, scope) };
+        if (ResolveType(normalized, scope)?.Kind == TypeKind.Variant)
+            throw SourceLocations.Error(expression,
+                "Variant values used as a Boolean require an explicit cast; use 'callback.call(...) as bool' (C#: 'callback.Call(...).As<bool>()').");
         // Other implicit truthiness conversions remain limited to numeric bitmasks.
         if (!ExpressionOperators.IsBitwise(normalized) || ResolveType(normalized, scope)?.Kind == TypeKind.Bool)
             return normalized;
@@ -603,10 +593,6 @@ internal sealed class SemanticNormalizer
             CallableValidityExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope)
-            },
-            CallableBooleanExpression callable => callable with
-            {
-                Value = NormalizeExpression(callable.Value, scope)
             },
             ObjectCreationExpression creation => creation with
             {
@@ -694,7 +680,8 @@ internal sealed class SemanticNormalizer
             && invocation.Arguments.Arguments.Count == 0)
             value = extraction.Target;
         var normalized = NormalizeExpression(value, scope, allowVariantDictionaryRead: true);
-        if (!IsVariantDictionaryRead(normalized, scope))
+        // Explicit casts also authorize Callable results and locals whose declared type is Variant.
+        if (!IsVariantDictionaryRead(normalized, scope) && ResolveType(normalized, scope)?.Kind != TypeKind.Variant)
             return new SafeCastExpression(type, normalized);
         if (type.Kind is TypeKind.Variant or TypeKind.Void)
             throw SourceLocations.Error(value, "Specify a concrete type for the dictionary value cast, not Variant or void.");
@@ -1201,7 +1188,7 @@ internal sealed class SemanticNormalizer
         CallableInvocationExpression => new TypeReference("Variant"),
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
-        CallableValidityExpression or CallableBooleanExpression => new TypeReference("bool"),
+        CallableValidityExpression => new TypeReference("bool"),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),
         ValueExpression { Text: "true" or "false" } => new TypeReference("bool"),
