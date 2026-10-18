@@ -40,6 +40,11 @@ public partial class CollectionOperations : RefCounted
 		{
 			return value;
 		}
+
+		public static Godot.Collections.Array<int> readArray()
+		{
+			return gdArray(1);
+		}
 	}
 
 	public Godot.Collections.Array<int> Values = gdArray(1, 2, 3);
@@ -114,7 +119,15 @@ public partial class CollectionOperations : RefCounted
 
 	public int customResult(CustomValue source)
 	{
-		return source.getValues().size();
+		return (source.getValues() as CustomValue).size();
+	}
+
+	public void externalCollections()
+	{
+		Godot.Collections.Array<int> externalValues = CustomValue.readArray();
+		var count = externalValues.Count;
+		var castValues = CustomValue.readArray() as Godot.Collections.Array<int>;
+		castValues.Add(count);
 	}
 
 	public void dictionaryArrays(Godot.Collections.Dictionary<int, Vector2> points)
@@ -134,7 +147,7 @@ public partial class CollectionOperations : RefCounted
 		var valueKey = Entries["values"];
 		var keyKey = Entries["keys"];
 		var returned = gdDictValues(getEntries());
-		var custom = Custom.values().keys();
+		var custom = (Custom.values() as CustomValue).keys();
 	}
 
 	public Godot.Collections.Array<string> entryKeys()

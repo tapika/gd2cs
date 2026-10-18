@@ -858,8 +858,17 @@ internal sealed class SemanticNormalizer
             return invocation with { Target = target, Arguments = arguments };
 
         var receiverType = ResolveType(member.Target, scope);
-        if (receiverType is null)
+        if (receiverType is null || string.IsNullOrEmpty(receiverType.Name))
+        {
+            // Leaving a dialect-specific call unbound would leak e.g. size() into C#.
+            // Known user-defined receivers remain untouched even if their method names overlap.
+            if (language == ScriptLanguage.GdScript && CollectionMappings.IsGdScriptMember(member.Member))
+                throw SourceLocations.Error(invocation,
+                    "Cannot translate '" + member.Member + "()' because the receiver type is unknown; "
+                    + "declare its concrete type (e.g. 'var items: Array[ElementType] = ...') "
+                    + "or cast the receiver with 'as Array[ElementType]' or 'as Dictionary[KeyType, ValueType]' as appropriate.");
             return invocation with { Target = target, Arguments = arguments };
+        }
         // ToArray is recognized only on a typed Godot array, not arbitrary user methods.
         if (language == ScriptLanguage.CSharp && receiverType.Kind == TypeKind.Array && member.Member == "ToArray")
         {

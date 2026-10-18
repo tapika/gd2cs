@@ -23,6 +23,9 @@ class CustomValue:
 	func IndexOf(value: int) -> int:
 		return value
 
+	static func readArray() -> Array[int]:
+		return [1]
+
 var Values := [1, 2, 3]
 var CustomValues : Array[CustomValue]
 var Entries : Dictionary[String, int]
@@ -80,7 +83,13 @@ func results() -> bool:
 	return entries.is_empty() and values.has(4)
 
 func customResult(source: CustomValue) -> int:
-	return source.getValues().size()
+	return (source.getValues() as CustomValue).size()
+
+func externalCollections():
+	var externalValues : Array[int] = CustomValue.readArray()
+	var count := externalValues.size()
+	var castValues := CustomValue.readArray() as Array[int]
+	castValues.append(count)
 
 func dictionaryArrays(points: Dictionary[int, Vector2]):
 	var values := points.values()
@@ -96,7 +105,7 @@ func dictionaryArrays(points: Dictionary[int, Vector2]):
 	var valueKey : int = Entries["values"]
 	var keyKey : int = Entries["keys"]
 	var returned := getEntries().values()
-	var custom := Custom.values().keys()
+	var custom := (Custom.values() as CustomValue).keys()
 
 func entryKeys() -> Array[String]:
 	return Entries.keys()

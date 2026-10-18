@@ -35,6 +35,10 @@ internal static class CollectionMappings
         new(TypeKind.Dictionary, CollectionOperation.Values, "values", "", 0)
     ];
 
+    // Names identify calls that need type information, never which collection translation to apply.
+    public static bool IsGdScriptMember(string member) => member == "sort_custom"
+        || mappings.Any(mapping => mapping.GdScriptMember == member);
+
     public static bool TryInvocation(
         ScriptLanguage language,
         TypeKind receiverKind,

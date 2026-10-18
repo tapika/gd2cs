@@ -420,6 +420,39 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].IndexOf(offending, StringComparison.Ordinal) + 1, error.Column);
     }
 
+    [Theory]
+    [InlineData("size()", true)]
+    [InlineData("size()", false)]
+    [InlineData("is_empty()", true)]
+    [InlineData("append(1)", true)]
+    [InlineData("clear()", true)]
+    [InlineData("erase(1)", true)]
+    [InlineData("remove_at(0)", true)]
+    [InlineData("find(1)", true)]
+    [InlineData("find(1, 0)", true)]
+    [InlineData("has(1)", true)]
+    [InlineData("sort()", true)]
+    [InlineData("sort_custom(Custom)", true)]
+    [InlineData("reverse()", true)]
+    [InlineData("shuffle()", true)]
+    [InlineData("keys()", true)]
+    [InlineData("values()", true)]
+    public void RejectUnknownCollections(string call, bool local)
+    {
+        var replacement = (local ? "externalValues." : "CustomValue.readArray().") + call;
+        var source = File.ReadAllText(Fixture("Expressions/CollectionOperations.gd"))
+            .Replace("var externalValues : Array[int] =", "var externalValues =")
+            .Replace("externalValues.size()", replacement);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.Contains("receiver type is unknown", error.Message);
+        Assert.Contains("declare its concrete type", error.Message);
+        Assert.Contains("as Array[ElementType]", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public void RejectDictionaryEntries()
     {
