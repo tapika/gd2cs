@@ -1,5 +1,6 @@
 using System.Collections;
 using gd2cs.Model;
+using gd2cs.Parsing;
 
 namespace gd2cs.Language;
 
@@ -7,6 +8,21 @@ namespace gd2cs.Language;
 internal static class EventParameterConversions
 {
     private const string Suffix = "_";
+
+    // Event binding must remove native double parameters via the reversible float conversion.
+    // Check script parameters only, not EventType/reflected metadata: ordinary double remains
+    // unsupported. Run after binding so handler declaration order cannot affect acceptance.
+    internal static void ValidateParameters(object? node)
+    {
+        if (node is ParameterDeclaration parameter && parameter.Type.Kind == TypeKind.Float64)
+            throw SourceLocations.Error(parameter.Type, "C# double is not supported; use float instead.");
+        if (node is IEnumerable list)
+            foreach (var item in list)
+                ValidateParameters(item);
+        else if (node is not null && node.GetType().IsClass && node.GetType().Namespace == typeof(Expression).Namespace)
+            foreach (var property in node.GetType().GetProperties())
+                ValidateParameters(property.GetValue(node));
+    }
 
     /* Generated conversion locals are a reversible dialect detail, not script statements.
        Fold only leading var/cast pairs whose incoming parameter has our generated name,

@@ -3,7 +3,9 @@ extends RefCounted
 
 var ActionButton : Button
 var ChoiceButton : OptionButton
+var ValueControl : SpinBox
 var Selected : int
+var Amount : float
 
 func wire():
 	ActionButton.pressed.connect(onPressed)
@@ -16,6 +18,9 @@ func wire():
 	ActionButton.pressed.disconnect(onPressed)
 	ChoiceButton.item_selected.disconnect(onSelected)
 	ActionButton.toggled.disconnect(onToggled)
+	ValueControl.value_changed.connect(onValueChanged)
+	ValueControl.value_changed.connect(func (value: float): onValueChanged(value))
+	ValueControl.value_changed.disconnect(onValueChanged)
 
 func onPressed():
 	return
@@ -27,6 +32,9 @@ func onSelected(index: int):
 	# Generated parameters must not shadow existing locals.
 	var index_ := 0
 	Selected = index + index_
+
+func onValueChanged(value: float):
+	Amount = value
 
 static func staticWire(button: Button):
 	button.pressed.connect(onStaticPressed)

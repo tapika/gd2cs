@@ -6,7 +6,9 @@ public partial class SignalConnections : RefCounted
 {
 	public Button ActionButton;
 	public OptionButton ChoiceButton;
+	public SpinBox ValueControl;
 	public int Selected;
+	public float Amount;
 
 	public void wire()
 	{
@@ -24,6 +26,13 @@ public partial class SignalConnections : RefCounted
 		ActionButton.Pressed -= onPressed;
 		ChoiceButton.ItemSelected -= onSelected;
 		ActionButton.Toggled -= onToggled;
+		ValueControl.ValueChanged += onValueChanged;
+		ValueControl.ValueChanged += (double value_) =>
+		{
+			var value = (float)(value_);
+			onValueChanged(value);
+		};
+		ValueControl.ValueChanged -= onValueChanged;
 	}
 
 	public void onPressed()
@@ -42,6 +51,12 @@ public partial class SignalConnections : RefCounted
 		// Generated parameters must not shadow existing locals.
 		var index_ = 0;
 		Selected = index + index_;
+	}
+
+	public void onValueChanged(double value_)
+	{
+		var value = (float)(value_);
+		Amount = value;
 	}
 
 	public static void staticWire(Button button)

@@ -242,7 +242,8 @@ public sealed class GodotTypeCatalog
         [
             new("Button", "BaseButton", "Pressed", "pressed", new List<TypeReference>()),
             new("Button", "BaseButton", "Toggled", "toggled", new List<TypeReference> { new("bool") }),
-            new("OptionButton", "OptionButton", "ItemSelected", "item_selected", new List<TypeReference> { new("int64") })
+            new("OptionButton", "OptionButton", "ItemSelected", "item_selected", new List<TypeReference> { new("int64") }),
+            new("SpinBox", "Range", "ValueChanged", "value_changed", new List<TypeReference> { new("float64") })
         ],
         new Dictionary<string, TypeReference>(StringComparer.Ordinal)
         {

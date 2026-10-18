@@ -233,6 +233,8 @@ Legacy C# `Connect(..., Callable.From(handler))` is accepted but emitted as even
 
 ### C# double
 
+Native event signatures are the exception: gd2cs generates a `double` parameter and a leading float conversion (`var value = (float)(value_);`) when the event requires double but the script handler uses float. Backtranslation removes this C#-only conversion. Named handlers and inline lambdas use the same mechanism as int/long event parameters, preserving disconnect support without delegate adapters.
+
 `gd2cs` maps C# `float` to GDScript `float` in both directions. C# `double` (`System.Double`) is unsupported and produces a translation error. This is a tooling choice: GDScript `Vector2/3` uses 32-bit `float`, and even thus some properties like `SpinBox.MinValue` use `double`, but mixing two different type can produce precision errors.
  Easier to support all types as `float`'s.
 

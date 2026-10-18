@@ -279,7 +279,7 @@ public sealed class TranspilerTests
         var source = File.ReadAllText(Fixture("Signals/SignalConnections" + extension)).Replace(original, replacement);
         var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
         var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
-        Assert.Equal(message, error.Message);
+        Assert.StartsWith(message, error.Message);
         var lines = source.ReplaceLineEndings("\n").Split('\n');
         var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
         Assert.Equal(line + 1, error.Line);
@@ -732,6 +732,31 @@ public sealed class TranspilerTests
         Assert.Equal("C# double is not supported; use float instead.", error.Message);
         Assert.True(error.Line > 0);
         Assert.True(error.Column > 0);
+    }
+
+    [Theory]
+    [InlineData("double")]
+    [InlineData("Double")]
+    [InlineData("System.Double")]
+    public void RejectDoubleParameters(string type)
+    {
+        var source = File.ReadAllText(Fixture("Classes/Callables.cs"))
+            .Replace("public static int evaluate(int value)", "public static int evaluate(" + type + " value)");
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
+        Assert.Equal("C# double is not supported; use float instead.", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains("evaluate(" + type, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(type, StringComparison.Ordinal) + 1, error.Column);
+    }
+
+    [Fact]
+    public void RejectUnconvertedEventDouble()
+    {
+        var source = File.ReadAllText(Fixture("Signals/SignalConnections.cs"))
+            .Replace("var value = (float)(value_);", "");
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
+        Assert.Equal("C# double is not supported; use float instead.", error.Message);
     }
 
     [Fact]

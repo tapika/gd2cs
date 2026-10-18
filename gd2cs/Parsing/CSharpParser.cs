@@ -189,7 +189,7 @@ public sealed class CSharpParser : IScriptParser
         {
             while (true)
             {
-                var type = ParseType();
+                var type = ParseType(allowEventDouble: true);
                 var name = tokens.Expect(TokenKind.Identifier).Text;
                 var defaultValue = tokens.TryConsume(TokenKind.Equals) ? ParseExpression() : null;
                 parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine, defaultValue));
@@ -413,7 +413,7 @@ public sealed class CSharpParser : IScriptParser
         return true;
     }
 
-    private TypeReference ParseType()
+    private TypeReference ParseType(bool allowEventDouble = false)
     {
         var typeToken = tokens.Current;
         var name = tokens.Expect(TokenKind.Identifier).Text;
@@ -423,9 +423,14 @@ public sealed class CSharpParser : IScriptParser
         }
         if (PackedArrayMappings.TryElement(name, out _))
             throw new ParseException(PackedArrayMappings.StorageError(name), typeToken.Line, typeToken.Column);
-        // GDScript has one float spelling; this tool deliberately maps it to C# float.
+        // Only parameter positions may temporarily contain a native event double. Semantic
+        // binding must fold its generated float conversion before final parameter validation.
         if (name is "double" or "Double" or "System.Double")
-            throw new ParseException("C# double is not supported; use float instead.", typeToken.Line, typeToken.Column);
+        {
+            if (!allowEventDouble || tokens.Current.Kind == TokenKind.OpenBracket)
+                throw new ParseException("C# double is not supported; use float instead.", typeToken.Line, typeToken.Column);
+            name = "float64";
+        }
         if (name is "Godot.Collections.Array" or "Godot.Collections.Dictionary")
             name = name["Godot.Collections.".Length..];
 
@@ -441,7 +446,7 @@ public sealed class CSharpParser : IScriptParser
         }
         if (name == "Dictionary" && arguments.Count != 2)
             throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
-        var type = new TypeReference(name switch { "String" => "string", "long" => "int64", _ => name }, arguments);
+        var type = SourceLocations.Record(new TypeReference(name switch { "String" => "string", "long" => "int64", _ => name }, arguments), typeToken);
         if (tokens.TryConsume(TokenKind.OpenBracket))
         {
             tokens.Expect(TokenKind.CloseBracket);
@@ -813,7 +818,7 @@ public sealed class CSharpParser : IScriptParser
         {
             // Qualified/generic element types are explicit lambda parameter types too.
             var type = tokens.Peek.Kind is TokenKind.Identifier or TokenKind.Dot or TokenKind.LessThan or TokenKind.OpenBracket
-                ? ParseType()
+                ? ParseType(allowEventDouble: true)
                 : types.ElementAtOrDefault(parameters.Count)
                     ?? throw new ParseException("Lambda parameter requires a type", tokens.Current.Line, tokens.Current.Column);
             var name = tokens.Expect(TokenKind.Identifier).Text;

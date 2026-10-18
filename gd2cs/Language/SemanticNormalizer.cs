@@ -52,7 +52,10 @@ internal sealed class SemanticNormalizer
                 ? NormalizeClass(declaration)
                 : element);
         }
-        return new ScriptModel(elements);
+        var result = new ScriptModel(elements);
+        if (language == ScriptLanguage.CSharp)
+            EventParameterConversions.ValidateParameters(result);
+        return result;
     }
 
     // Collects declarations before rewriting any initializer or callable body.
@@ -162,12 +165,12 @@ internal sealed class SemanticNormalizer
             name = managed;
             native = godotName == managed ? null : godotName;
         }
-        return type with
+        return SourceLocations.Copy(type, type with
         {
             Name = name,
             GodotName = native,
             TypeArguments = type.TypeArguments.Select(argument => NormalizeType(argument, userTypes)).ToList()
-        };
+        });
     }
 
     private ParameterList NormalizeParameterTypes(ParameterList parameters, HashSet<string> userTypes) => parameters with
@@ -1217,7 +1220,8 @@ internal sealed class SemanticNormalizer
     // Width differences are dialect details; unrelated types cannot be made compatible by renaming.
     private static bool SameSignalType(TypeReference left, TypeReference right) =>
         SameHandlerType(left, right)
-        || left.Kind is TypeKind.Int32 or TypeKind.Int64 && right.Kind is TypeKind.Int32 or TypeKind.Int64;
+        || left.Kind is TypeKind.Int32 or TypeKind.Int64 && right.Kind is TypeKind.Int32 or TypeKind.Int64
+        || left.Kind is TypeKind.Float32 or TypeKind.Float64 && right.Kind is TypeKind.Float32 or TypeKind.Float64;
 
     // Makes named methods into Callables while retaining already-constructed Callable expressions.
     private Expression NormalizeSignalHandler(Expression expression, GodotSignalReference signal,

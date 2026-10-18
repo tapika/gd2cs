@@ -1013,7 +1013,7 @@ public sealed class CSharpEmitter : IScriptEmitter
             output.Append("[]");
             return;
         }
-        var name = type.Kind switch { TypeKind.String => "string", TypeKind.Int64 => "long", _ => type.Name };
+        var name = type.Kind switch { TypeKind.String => "string", TypeKind.Int64 => "long", TypeKind.Float64 => "double", _ => type.Name };
         output.Append(type.Kind is TypeKind.Array or TypeKind.Dictionary
             ? "Godot.Collections." + name
             : name);
