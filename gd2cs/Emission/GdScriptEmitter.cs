@@ -94,8 +94,8 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     if (field.Initializer is null)
                     {
                         output.Append(space_colon);
-                        EmitType(output, field.Type, true);
-                        EmitDictionaryHint(output, field.Type);
+                        EmitType(output, field.Type, true, true);
+                        EmitTemplateHint(output, field.Type);
                         output.AppendLine();
                         break;
                     }
@@ -201,14 +201,19 @@ public sealed class GdScriptEmitter : IScriptEmitter
             output.Append(indent);
     }
 
-    // Godot forbids nested typed collections; trailing hints retain the omitted schema.
-    private static void EmitDictionaryHint(StringBuilder output, TypeReference type)
+    // End-of-line hints describe either the plain array element or its nested dictionary schema.
+    private static bool UsesArrayHint(TypeReference type) => type.Kind == TypeKind.Array
+        && type.TypeArguments.Count == 1 && type.TypeArguments[0].Name.Contains('.');
+
+    private static void EmitTemplateHint(StringBuilder output, TypeReference type)
     {
-        if (type.Kind != TypeKind.Array || type.TypeArguments.Count != 1
-            || type.TypeArguments[0].Kind != TypeKind.Dictionary)
+        if (type.Kind != TypeKind.Array || type.TypeArguments.Count != 1)
+            return;
+        var arguments = UsesArrayHint(type) ? type.TypeArguments
+            : type.TypeArguments[0].Kind == TypeKind.Dictionary ? type.TypeArguments[0].TypeArguments : null;
+        if (arguments is null)
             return;
         output.Append(" #[");
-        var arguments = type.TypeArguments[0].TypeArguments;
         for (var index = 0; index < arguments.Count; index++)
         {
             if (index > 0)
@@ -218,7 +223,8 @@ public sealed class GdScriptEmitter : IScriptEmitter
         output.Append(']');
     }
 
-    private static void EmitType(StringBuilder output, TypeReference type, bool omitNestedDictionaryTypes = false)
+    private static void EmitType(StringBuilder output, TypeReference type, bool omitNestedDictionaryTypes = false,
+        bool omitQualifiedArrayElement = false)
     {
         if (type.Kind == TypeKind.ArrayBuffer)
         {
@@ -232,7 +238,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
             TypeKind.Float64 => "float",
             _ => type.GodotName ?? type.Name
         });
-        if (type.TypeArguments.Count == 0)
+        if (type.TypeArguments.Count == 0 || omitQualifiedArrayElement && UsesArrayHint(type))
             return;
         output.Append('[');
         for (var index = 0; index < type.TypeArguments.Count; index++)
@@ -259,12 +265,12 @@ public sealed class GdScriptEmitter : IScriptEmitter
             _ => ((TypeReference?)null, (Expression?)null)
         };
         if (type?.Kind == TypeKind.Array && type.TypeArguments.Count == 1
-            && type.TypeArguments[0].Kind == TypeKind.Dictionary)
+            && (type.TypeArguments[0].Kind == TypeKind.Dictionary || UsesArrayHint(type)))
         {
             EmitExpression(output, value!, indent);
             output.Append(" as ");
-            EmitType(output, type, true);
-            EmitDictionaryHint(output, type);
+            EmitType(output, type, true, true);
+            EmitTemplateHint(output, type);
         }
         else
             EmitExpression(output, expression, indent);
@@ -314,10 +320,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     else if (statement.Typing is LocalTyping.Explicit or LocalTyping.InferredWithExplicitGdType)
                     {
                         output.Append(space_colon);
-                        EmitType(output, statement.Type ?? throw SourceLocations.Error(statement, "Explicit local requires a type."), true);
+                        EmitType(output, statement.Type ?? throw SourceLocations.Error(statement, "Explicit local requires a type."),
+                            true, statement.Initializer is null);
                         if (statement.Initializer is null)
                         {
-                            EmitDictionaryHint(output, statement.Type!);
+                            EmitTemplateHint(output, statement.Type!);
                             output.AppendLine();
                             break;
                         }

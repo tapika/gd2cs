@@ -10,7 +10,7 @@ class AABB:
 	static var SharedCount := 3
 	var Values : Array[int]
 
-var Values : Array[NestedClasses.AABB]
+var Values : Array #[NestedClasses.AABB]
 
 func identity(value: NestedClasses.AABB) -> NestedClasses.AABB:
 	return value

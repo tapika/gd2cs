@@ -17,6 +17,7 @@ public partial class DictionaryExpressions : RefCounted
 	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>> ObjectEntries = new Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>();
 	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>> MixedEntries = new Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>>();
 	public Godot.Collections.Array<Godot.Collections.Dictionary<string, DictionaryExpressions.Item>> CustomEntries = new Godot.Collections.Array<Godot.Collections.Dictionary<string, DictionaryExpressions.Item>>();
+	public Godot.Collections.Array<DictionaryExpressions.Item> Items = new Godot.Collections.Array<DictionaryExpressions.Item>();
 
 	public void record(Node3D node, Vector3 size)
 	{
@@ -28,6 +29,7 @@ public partial class DictionaryExpressions : RefCounted
 
 	public void inspect()
 	{
+		Godot.Collections.Array<DictionaryExpressions.Item> pendingItems = new Godot.Collections.Array<DictionaryExpressions.Item>();
 		Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>> pending = new Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>();
 		Godot.Collections.Dictionary<string, int> pendingCounts = new Godot.Collections.Dictionary<string, int>();
 		Godot.Collections.Dictionary<string, Variant> compact = new Godot.Collections.Dictionary<string, Variant> {{ "enabled", true }, { "offset", new Vector3(1.0f, 2.0f, 3.0f) }};
@@ -80,5 +82,11 @@ public partial class DictionaryExpressions : RefCounted
 	public void store(Godot.Collections.Dictionary<string, Variant> entry, Node node)
 	{
 		entry["node"] = node;
+	}
+
+	public int hintedItems(Callable callback)
+	{
+		var items = callback.Call().As<Godot.Collections.Array<DictionaryExpressions.Item>>();
+		return items.Count;
 	}
 }

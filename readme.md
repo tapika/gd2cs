@@ -155,13 +155,28 @@ var counts : Dictionary[String, int] = {"first": 1}
 
 Use `Dictionary[String, Variant]` for mixed values, or prefer a class with explicitly typed members when each field has a different type. GDScript supports untyped dictionaries; this restriction belongs to gd2cs. Empty typed dictionaries remain supported.
 
-For an array of dictionaries, Godot forbids nested typed collections. On declarations without an initializer, put the dictionary types in a trailing gd2cs hint:
+### Collection type hints
+
+Bracketed trailing comments can supply generic type arguments to gd2cs without exposing them to Godot's type checker. On a plain `Array`, the hint supplies its single element type:
+
+```gdscript
+var items : Array #[Catalog.Entry]
+```
+
+gd2cs reads this as `Array[Catalog.Entry]` and emits C# `Godot.Collections.Array<Catalog.Entry>`. Qualified array element types are reconstructed as hints on declarations without initializers and standalone local casts. For a local initialized by another function, use a separate assignment:
+
+```gdscript
+var items : Array #[Catalog.Entry]
+items = Catalog.getEntries()
+```
+
+For an array of dictionaries, Godot forbids nested typed collections. Here the hint supplies the **dictionary's two arguments**, not the array's element type:
 
 ```gdscript
 var entries : Array[Dictionary] #[String, Node3D]
 ```
 
-gd2cs reads this as `Array[Dictionary[String, Node3D]]` and emits C# `Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>`. Backtranslation reconstructs the hint. It works on fields and locals; Godot treats it as a comment and does not enforce the dictionary key/value types. Without the hint, `Array[Dictionary]` remains rejected. Mixed node and vector values require a `Variant` value type, not `Node3D`.
+gd2cs reads this as `Array[Dictionary[String, Node3D]]` and emits C# `Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>`. Backtranslation reconstructs the hint. Both forms work on fields and locals. Godot treats hints as comments and does not enforce the hinted element/key/value types; hints do not convert or retype existing collections. Ordinary comments are not hints: the brackets are required. Without its hint, `Array[Dictionary]` remains rejected. Mixed node and vector values require a `Variant` value type, not `Node3D`.
 
 Hints also work on a local's collection cast, for example `var entries := callback.call() as Array[Dictionary] #[String, Variant]`. Store the cast in a local before iterating it. A raw `Variant` (including `Callable.call()` results) cannot be iterated: cast it to `Array[ElementType]` first. Iterator annotations such as `for entry: Dictionary[String, Variant] in entries:` map to explicitly typed C# `foreach`; omitted annotations map to `foreach (var entry in entries)`. An iterator annotation alone does not cast a Variant collection.
 

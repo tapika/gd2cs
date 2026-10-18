@@ -353,7 +353,7 @@ public sealed class GdScriptParser : IScriptParser
         return type;
     }
 
-    private TypeReference ParseType(bool allowDictionaryHint = false)
+    private TypeReference ParseType(bool allowTemplateHint = false)
     {
         var typeToken = tokens.Current;
         var name = tokens.Expect(TokenKind.Identifier).Text;
@@ -367,43 +367,50 @@ public sealed class GdScriptParser : IScriptParser
         {
             do
             {
-                arguments.Add(ParseType(allowDictionaryHint && name == "Array"));
+                arguments.Add(ParseType(allowTemplateHint && name == "Array"));
             }
             while (tokens.TryConsume(TokenKind.Comma));
             tokens.Expect(TokenKind.CloseBracket);
         }
+        // Bare Array hints supply the array element; Array[Dictionary] hints below instead
+        // supply the nested dictionary schema. Only bracket-prefixed comments are metadata.
+        if (allowTemplateHint && name == "Array" && arguments.Count == 0
+            && tokens.Current.Kind == TokenKind.Comment && tokens.Current.Text.StartsWith('['))
+            return ParseTemplateHint("Array", 1);
         if (name == "Array" && arguments.Count == 1
             && arguments[0].Kind == TypeKind.Dictionary && arguments[0].TypeArguments.Count == 0)
         {
-            if (!allowDictionaryHint || tokens.Current.Kind != TokenKind.Comment
+            if (!allowTemplateHint || tokens.Current.Kind != TokenKind.Comment
                 || !tokens.Current.Text.StartsWith('['))
                 throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
-            arguments[0] = ParseDictionaryHint();
+            arguments[0] = ParseTemplateHint("Dictionary", 2);
         }
-        if (name == "Dictionary" && arguments.Count != 2 && !(allowDictionaryHint && arguments.Count == 0))
+        if (name == "Dictionary" && arguments.Count != 2 && !(allowTemplateHint && arguments.Count == 0))
             throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
         return new TypeReference(name == "String" ? "string" : name, arguments);
     }
 
     // Reuses type grammar rather than splitting comment text, so qualified names remain structural.
-    private TypeReference ParseDictionaryHint()
+    private TypeReference ParseTemplateHint(string container, int argumentCount)
     {
         var comment = tokens.Expect(TokenKind.Comment);
         var parser = new GdScriptParser
         {
-            tokens = new TokenReader(new Lexer("Dictionary" + comment.Text, true))
+            tokens = new TokenReader(new Lexer(container + comment.Text, true))
         };
         try
         {
             var type = parser.ParseType();
             parser.tokens.Expect(TokenKind.EndOfFile);
+            if (type.TypeArguments.Count != argumentCount)
+                throw new ParseException($"{container} requires {argumentCount} type argument(s).", 1, container.Length + 1);
             return type;
         }
         catch (ParseException error)
         {
-            // Remove the synthetic Dictionary prefix when reporting the original comment position.
-            throw new ParseException("Invalid dictionary type hint: " + error.Message,
-                comment.Line, comment.Column + 1 + Math.Max(0, error.Column - 11));
+            // Remove the synthetic container prefix when reporting the original comment position.
+            throw new ParseException("Invalid " + container.ToLowerInvariant() + " type hint: " + error.Message,
+                comment.Line, comment.Column + 1 + Math.Max(0, error.Column - container.Length - 1));
         }
     }
 

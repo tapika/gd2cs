@@ -624,6 +624,25 @@ public sealed class TranspilerTests
         }
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[int, String]")]
+    [InlineData("[DictionaryExpressions.]")]
+    [InlineData("[DictionaryExpressions.Item,]")]
+    [InlineData("[DictionaryExpressions.Item] trailing")]
+    [InlineData("[Dictionary]")]
+    public void RejectArrayHints(string hint)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.gd"))
+            .Replace("Array #[DictionaryExpressions.Item]", "Array #" + hint);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.StartsWith("Invalid array type hint:", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.StartsWith("var Items", StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.True(error.Column > lines[line].IndexOf('#') + 1);
+    }
+
     [Fact]
     public static void RejectUntypedDictionaries()
     {

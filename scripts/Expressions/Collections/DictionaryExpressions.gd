@@ -12,6 +12,7 @@ var Nodes : Dictionary[String, Node3D]
 var ObjectEntries : Array[Dictionary] #[String, Node3D]
 var MixedEntries : Array[Dictionary] #[String, Variant]
 var CustomEntries : Array[Dictionary] #[String, DictionaryExpressions.Item]
+var Items : Array #[DictionaryExpressions.Item]
 
 func record(node: Node3D, size: Vector3):
 	var entry : Dictionary[String, Variant] = {
@@ -20,6 +21,7 @@ func record(node: Node3D, size: Vector3):
 	}
 
 func inspect():
+	var pendingItems : Array #[DictionaryExpressions.Item]
 	var pending : Array[Dictionary] #[String, Node3D]
 	var pendingCounts : Dictionary[String, int]
 	var compact : Dictionary[String, Variant] = {"enabled": true, "offset": Vector3(1.0, 2.0, 3.0)}
@@ -56,3 +58,7 @@ func countOf(entry: Dictionary[String, int]) -> int:
 
 func store(entry: Dictionary[String, Variant], node: Node):
 	entry["node"] = node
+
+func hintedItems(callback: Callable) -> int:
+	var items := callback.call() as Array #[DictionaryExpressions.Item]
+	return items.size()
