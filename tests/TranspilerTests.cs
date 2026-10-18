@@ -344,6 +344,32 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].IndexOf(token, StringComparison.Ordinal) + 1, error.Column);
     }
 
+    [Theory]
+    [InlineData("value in values", "in values")]
+    [InlineData("value not in values", "not in values")]
+    [InlineData("true and value in [1, 2]", "in [")]
+    [InlineData("false or value not in values", "not in values")]
+    [InlineData("not value in values", "in values")]
+    [InlineData("(value in values)", "in values")]
+    [InlineData("(value\n\t\tin values)", "in values")]
+    [InlineData("(value\n\t\tnot in values)", "not in values")]
+    [InlineData("(value not\n\t\tin values)", "not")]
+    [InlineData("values.has(value in values)", "in values")]
+    public void RejectMembership(string expression, string offending)
+    {
+        var source = "class_name Membership\nextends RefCounted\n\nfunc evaluate(value: int, values: Array[int]):\n\tif "
+            + expression + ":\n\t\tpass\n";
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.Contains("Membership operators", error.Message);
+        Assert.Contains("values.has(value)", error.Message);
+        if (offending.StartsWith("not", StringComparison.Ordinal))
+            Assert.Contains("not values.has(value)", error.Message);
+        var lines = source.Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(offending, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(offending, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public void RejectDictionaryEntries()
     {

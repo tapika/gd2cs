@@ -459,6 +459,7 @@ public sealed class GdScriptParser : IScriptParser
         var left = ParseUnaryExpression();
         while (true)
         {
+            RejectMembership();
             // Leave delimiter/argument newlines for their owner and lower-precedence operators for the outer call.
             var beforeOperator = groupingDepth > 0 && tokens.Current.Kind == TokenKind.NewLine
                 && OperatorPrecedence(tokens.PeekAfterNewLines()) >= minimumPrecedence
@@ -501,6 +502,34 @@ public sealed class GdScriptParser : IScriptParser
             return new ConditionalExpression(condition, left, whenFalse);
         }
         return left;
+    }
+
+    // Detect membership before precedence parsing leaves it for a delimiter owner (e.g. an if colon).
+    // Look through grouped continuation lines without consuming layout; for-loop separators are
+    // consumed by ParseForEach before expression parsing and never enter this check.
+    private void RejectMembership()
+    {
+        var offset = 0;
+        if (groupingDepth > 0)
+            while (tokens.PeekAt(offset).Kind == TokenKind.NewLine)
+                offset++;
+        var operation = tokens.PeekAt(offset);
+        var negated = operation.Kind == TokenKind.Identifier && operation.Text == "not";
+        if (negated)
+        {
+            offset++;
+            if (groupingDepth > 0)
+                while (tokens.PeekAt(offset).Kind == TokenKind.NewLine)
+                    offset++;
+        }
+        var keyword = tokens.PeekAt(offset);
+        if (keyword.Kind != TokenKind.Identifier || keyword.Text != "in")
+            return;
+        var replacement = negated ? "not values.has(value)" : "values.has(value)";
+        throw new ParseException(
+            "Membership operators 'in' and 'not in' are not supported; use '" + replacement
+                + "' instead (arrays: Contains, dictionaries: ContainsKey in C#).",
+            operation.Line, operation.Column);
     }
 
     private Expression ParseUnaryExpression()
