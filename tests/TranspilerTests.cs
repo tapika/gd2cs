@@ -421,6 +421,32 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData(".gd", "(source.Collision as CollisionShape3D).shape as BoxShape3D", "source.Collision.shape as BoxShape3D", "source.Collision.shape")]
+    [InlineData(".gd", "(source.Collision as CollisionShape3D).shape as BoxShape3D", "source.Collision.get_parent()", "source.Collision.get_parent()")]
+    [InlineData(".cs", "(source.Collision as CollisionShape3D).Shape as BoxShape3D", "source.Collision.Shape as BoxShape3D", "source.Collision.Shape")]
+    [InlineData(".cs", "(source.Collision as CollisionShape3D).Shape as BoxShape3D", "source.Collision.GetParent()", "source.Collision.GetParent()")]
+    [InlineData(".gd", "func externalShape(source: NodeSource) -> BoxShape3D:\n\tvar collision : CollisionShape3D = source.Collision", "func externalShape(source: NodeSource) -> BoxShape3D:\n\tvar collision := source.Collision", "collision.shape as BoxShape3D")]
+    [InlineData(".cs", "public BoxShape3D externalShape(NodeSource source)\n\t{\n\t\tCollisionShape3D collision = source.Collision;", "public BoxShape3D externalShape(NodeSource source)\n\t{\n\t\tvar collision = source.Collision;", "collision.Shape as BoxShape3D")]
+    public void RejectUnknownMembers(string extension, string original, string replacement, string offending)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/BuiltInValues" + extension))
+            .ReplaceLineEndings("\n").Replace(original, replacement)
+            // Leave receiver references external: same-script NodeSource is now resolvable.
+            .Replace("class NodeSource:", "class DeclaredSource:")
+            .Replace("class NodeSource : RefCounted", "class DeclaredSource : RefCounted");
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("receiver type is unknown", error.Message);
+        Assert.Contains("explicitly typed local", error.Message);
+        Assert.Contains("cast the receiver", error.Message);
+        var lines = source.Split('\n');
+        var offset = source.IndexOf(offending, source.IndexOf(replacement, StringComparison.Ordinal), StringComparison.Ordinal);
+        var line = source[..offset].Count(character => character == '\n');
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(offending, StringComparison.Ordinal) + 1, error.Column);
+    }
+
+    [Theory]
     [InlineData("size()", true)]
     [InlineData("size()", false)]
     [InlineData("is_empty()", true)]
@@ -439,9 +465,10 @@ public sealed class TranspilerTests
     [InlineData("values()", true)]
     public void RejectUnknownCollections(string call, bool local)
     {
-        var replacement = (local ? "externalValues." : "CustomValue.readArray().") + call;
+        var replacement = (local ? "externalValues." : "UnavailableSource.readArray().") + call;
         var source = File.ReadAllText(Fixture("Expressions/CollectionOperations.gd"))
             .Replace("var externalValues : Array[int] =", "var externalValues =")
+            .Replace("CustomValue.readArray()", "UnavailableSource.readArray()")
             .Replace("externalValues.size()", replacement);
         var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
         Assert.Contains("receiver type is unknown", error.Message);

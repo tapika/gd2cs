@@ -51,4 +51,5 @@ class CustomControl:
 	var item_selected : Connector
 
 func unrelated(control: CustomControl, callback: Callable):
-	control.item_selected.connect(callback)
+	var connector : Connector = control.item_selected
+	connector.connect(callback)

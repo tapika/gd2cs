@@ -85,6 +85,7 @@ public partial class SignalConnections : RefCounted
 
 	public void unrelated(CustomControl control, Callable callback)
 	{
-		control.item_selected.connect(callback);
+		Connector connector = control.item_selected;
+		connector.connect(callback);
 	}
 }

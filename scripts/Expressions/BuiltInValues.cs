@@ -134,4 +134,95 @@ public partial class BuiltInValues : Node3D
 		var component = transform[axis][axis];
 		return column[axis] + component;
 	}
+
+	public partial class NodeSource : RefCounted
+	{
+		public CollisionShape3D Collision;
+
+		public static NodeSource create()
+		{
+			return new NodeSource();
+		}
+	}
+
+	public BoxShape3D externalReceiver()
+	{
+		var source = NodeSource.create();
+		CollisionShape3D collision = source.Collision;
+		return collision.Shape as BoxShape3D;
+	}
+
+	public BoxShape3D externalShape(NodeSource source)
+	{
+		CollisionShape3D collision = source.Collision;
+		var shape = collision.Shape as BoxShape3D;
+		collision.Position = Vector3.Zero;
+		return shape;
+	}
+
+	public BoxShape3D castShape(NodeSource source)
+	{
+		return (source.Collision as CollisionShape3D).Shape as BoxShape3D;
+	}
+
+	public BoxShape3D declaredShape(NodeSource source)
+	{
+		var collision = source.Collision;
+		collision.Position = Vector3.Zero;
+		return source.Collision.Shape as BoxShape3D;
+	}
+
+	public BoxShape3D returnedShape()
+	{
+		return BuiltInValues.NodeSource.create().Collision.Shape as BoxShape3D;
+	}
+
+	public int chainedData(DataGroup group)
+	{
+		var data = group.Data;
+		return data.Count + group.Data.Count;
+	}
+
+	public float scopedData(FirstScope first, SecondScope second)
+	{
+		var left = first.getItem();
+		var right = second.getItem();
+		return left.Value + right.Value.X;
+	}
+
+	public partial class DataGroup : RefCounted
+	{
+		public DataValue Data;
+	}
+
+	public partial class DataValue : RefCounted
+	{
+		public int Count = 2;
+	}
+
+	public partial class FirstScope : RefCounted
+	{
+		public Item getItem()
+		{
+			return new Item();
+		}
+
+		public partial class Item : RefCounted
+		{
+			public int Value;
+		}
+	}
+
+	public partial class SecondScope : RefCounted
+	{
+		public Item getItem()
+		{
+			return new Item();
+		}
+
+		public partial class Item : RefCounted
+		{
+			public Vector3 Value;
+		}
+	}
 }

@@ -188,6 +188,8 @@ public sealed class GodotTypeCatalog
         ],
         [
             KnownMember("Node3D", "Position", "Vector3"),
+            KnownMember("CollisionShape3D", "Position", "Vector3") with { DeclaringType = "Node3D" },
+            KnownMember("CollisionShape3D", "Shape", "Shape3D"),
             KnownMember("Node3D", "GlobalPosition", "Vector3"),
             KnownMember("World3D", "DirectSpaceState", "PhysicsDirectSpaceState3D"),
             KnownMember("Aabb", "Position", "Vector3"),

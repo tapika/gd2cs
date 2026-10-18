@@ -14,8 +14,9 @@ legitimately declare the same members. This pass binds the receiver before norma
 Binding has two phases for every class. First, all fields and constants are collected so a
 method can refer to a member declared later in the file. Second, expressions are rebuilt in
 source order while callable scopes track parameters, inferred/explicit locals, and loop
-variables. Only an Array or Dictionary receiver may use CollectionMappings. An unresolved
-receiver remains ordinary syntax rather than being guessed to be a collection.
+variables. ScriptTypeCatalog supplies declared user-field and method-result types across
+the script's lexical class scopes. Only a known Array or Dictionary receiver may use
+CollectionMappings; required but unavailable receiver types produce a diagnostic.
 
 The normalized model contains CollectionOperationExpression nodes, never dialect names such
 as `size`, `Count`, `append`, or `Add`. Operations that share GDScript syntax but differ in
@@ -35,6 +36,7 @@ internal sealed class SemanticNormalizer
     private static readonly ArgumentList noArguments = new(new List<Argument>(), false);
     private readonly ScriptLanguage language;
     private readonly GodotTypeCatalog godotTypes;
+    private ScriptTypeCatalog scriptTypes = null!;
 
     public SemanticNormalizer(ScriptLanguage language, GodotTypeCatalog godotTypes)
     {
@@ -45,6 +47,7 @@ internal sealed class SemanticNormalizer
     // Preserves top-level trivia while normalizing every class independently.
     public ScriptModel Normalize(ScriptModel model)
     {
+        scriptTypes = new ScriptTypeCatalog(model, godotTypes, language);
         var elements = new List<SyntaxElement>();
         foreach (var element in model.Elements)
         {
@@ -59,7 +62,7 @@ internal sealed class SemanticNormalizer
     }
 
     // Collects declarations before rewriting any initializer or callable body.
-    private ClassDeclaration NormalizeClass(ClassDeclaration declaration, HashSet<string>? enclosingTypes = null)
+    private ClassDeclaration NormalizeClass(ClassDeclaration declaration, HashSet<string>? enclosingTypes = null, string? classPath = null)
     {
         var members = new Dictionary<string, TypeReference>(StringComparer.Ordinal);
         var methods = new Dictionary<string, List<MethodDeclaration>>(StringComparer.Ordinal);
@@ -92,7 +95,8 @@ internal sealed class SemanticNormalizer
                 signals.Add(signal.Name, signal);
         }
 
-        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType, declaration.Name, godotTypes);
+        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType, declaration.Name,
+            godotTypes, scriptTypes, classPath ?? declaration.Name);
         // Inference follows binding: constructors and static reads acquire their result
         // types from metadata. Resolve class-wide declarations before any method body.
         // Revisit forward dependencies until types stabilize, bounded by declaration count.
@@ -111,6 +115,7 @@ internal sealed class SemanticNormalizer
                 };
                 changed |= !SameHandlerType(members[name], type);
                 members[name] = type;
+                scriptTypes.UpdateMember(scope.ClassPath, name, type);
             }
             if (!changed)
                 break;
@@ -227,7 +232,8 @@ internal sealed class SemanticNormalizer
     // Reuses root-class binding so nested classes receive their own member namespace.
     private NestedClassDeclaration NormalizeNestedClass(NestedClassDeclaration nested, BindingScope parentScope)
     {
-        var normalized = NormalizeClass(new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements), parentScope.UserTypes);
+        var normalized = NormalizeClass(new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements),
+            parentScope.UserTypes, parentScope.ClassPath + "." + nested.Name);
         return nested with { BaseType = normalized.BaseType, Elements = normalized.Elements };
     }
 
@@ -309,7 +315,10 @@ internal sealed class SemanticNormalizer
             {
                 // Inferred locals become bindable from the normalized initializer type.
                 var type = local.Type ?? ResolveType(local.Initializer, scope);
-                scope.Declare(local.Name, type ?? new TypeReference(""));
+                var bindingType = type ?? new TypeReference("");
+                if (type is null && local.Initializer is MemberAccessExpression or IndexExpression)
+                    scope.UntypedMemberResults.Add(bindingType);
+                scope.Declare(local.Name, bindingType);
             }
         }
         return result;
@@ -366,7 +375,12 @@ internal sealed class SemanticNormalizer
             initializer = null;
         var type = statement.Type ?? ResolveType(initializer, scope);
         if (type is not null)
+        {
+            var originalType = type;
             type = NormalizeType(type, scope.UserTypes);
+            if (scope.UntypedMemberResults.Contains(originalType))
+                scope.UntypedMemberResults.Add(type);
+        }
         var typing = statement.Typing;
         if (initializer is DictionaryExpression)
             typing = LocalTyping.Explicit;
@@ -866,10 +880,7 @@ internal sealed class SemanticNormalizer
             // Leaving a dialect-specific call unbound would leak e.g. size() into C#.
             // Known user-defined receivers remain untouched even if their method names overlap.
             if (language == ScriptLanguage.GdScript && CollectionMappings.IsGdScriptMember(member.Member))
-                throw SourceLocations.Error(invocation,
-                    "Cannot translate '" + member.Member + "()' because the receiver type is unknown; "
-                    + "declare its concrete type (e.g. 'var items: Array[ElementType] = ...') "
-                    + "or cast the receiver with 'as Array[ElementType]' or 'as Dictionary[KeyType, ValueType]' as appropriate.");
+                RequireReceiverType(member.Target, member.Member + "()", invocation, scope);
             return invocation with { Target = target, Arguments = arguments };
         }
         // ToArray is recognized only on a typed Godot array, not arbitrary user methods.
@@ -905,8 +916,12 @@ internal sealed class SemanticNormalizer
         {
             return new CollectionOperationExpression(member.Target, operation, arguments);
         }
+        // Script declarations shadow inherited native methods; their original names are authoritative.
+        if (scope.ScriptTypes.HasMethod(receiverType, member.Member, scope.ClassPath))
+            return invocation with { Target = target, Arguments = arguments };
+        var nativeReceiver = scope.ScriptTypes.NativeBase(receiverType, scope.ClassPath) ?? receiverType;
         if (godotTypes.TryResolveMethod(
-                receiverType.Name,
+                nativeReceiver.Name,
                 member.Member,
                 language,
                 arguments.Arguments.Count,
@@ -1349,18 +1364,29 @@ internal sealed class SemanticNormalizer
             return staticMember;
         var target = NormalizeExpression(member.Target, scope);
         var receiverType = ResolveType(target, scope);
+        // Preserve first-level user member names. Chained results (including aliases) need
+        // their own type before another access; casting the final property is too late.
+        var isFirstRead = target is ValueExpression
+            && (receiverType is null || !scope.UntypedMemberResults.Contains(receiverType));
+        if (!isFirstRead && scope.StaticReceiver(target) is null)
+            RequireReceiverType(target, "." + member.Member, member, scope);
         // Dictionary dot access is a string-key lookup, never a reflected object member.
         if (language == ScriptLanguage.GdScript && receiverType?.Kind == TypeKind.Dictionary)
             return SourceLocations.Copy(member, new IndexExpression(target, new ValueExpression("\"" + member.Member + "\"")));
+        // A script field supplies its result type without becoming a reflected/renamed member.
+        if (scope.ResolveMember(member with { Target = target }) is not null)
+            return member with { Target = target };
         if (language == ScriptLanguage.CSharp &&
             receiverType is not null &&
             CollectionMappings.TryCSharpProperty(receiverType.Kind, member.Member, out var operation))
         {
             return new CollectionOperationExpression(target, operation, noArguments);
         }
-        if (receiverType is not null &&
+        var nativeReceiver = receiverType is null ? null
+            : scope.ScriptTypes.NativeBase(receiverType, scope.ClassPath) ?? receiverType;
+        if (nativeReceiver is not null &&
             godotTypes.TryResolveMember(
-                receiverType.Name,
+                nativeReceiver.Name,
                 member.Member,
                 language,
                 out var reference))
@@ -1383,6 +1409,27 @@ internal sealed class SemanticNormalizer
         }
         return member with { Target = target };
     }
+
+    // Shared by property chains and collection calls: never guess a receiver's API from its name.
+    private static void RequireReceiverType(Expression receiver, string access, Expression location, BindingScope scope)
+    {
+        var type = ResolveType(receiver, scope);
+        if (type is not null && !string.IsNullOrEmpty(type.Name))
+            return;
+        throw SourceLocations.Error(location,
+            "Cannot translate '" + access + "' because the receiver type is unknown ('" + ReceiverName(receiver)
+            + "'); declare its concrete type using an explicitly typed local or cast the receiver with 'as ConcreteType'. "
+            + "For collections use 'as Array[ElementType]' or 'as Dictionary[KeyType, ValueType]' as appropriate.");
+    }
+
+    private static string ReceiverName(Expression receiver) => receiver switch
+    {
+        ValueExpression value => value.Text,
+        MemberAccessExpression member => ReceiverName(member.Target) + "." + member.Member,
+        InvocationExpression call => ReceiverName(call.Target) + (call.Arguments.Arguments.Count == 0 ? "()" : "(...)"),
+        ParenthesizedExpression grouped => ReceiverName(grouped.Expression),
+        _ => "value"
+    };
 
     // Bind type-qualified members and unqualified globals only after lexical shadowing checks.
     private bool TryNormalizeStaticMember(Expression expression, BindingScope scope, out Expression result)
@@ -1525,6 +1572,7 @@ internal sealed class SemanticNormalizer
         VariantCastExpression cast => cast.Type,
         ObjectCreationExpression creation => creation.Type,
         InvocationExpression invocation => scope.ResolveCall(invocation),
+        MemberAccessExpression member => scope.ResolveMember(member),
         GodotGlobalFunctionExpression global => global.Function.ResultType,
         GodotStaticMethodExpression method => method.Method.ResultType,
         GodotMethodInvocationExpression method => method.Method.ResultType,
@@ -1571,7 +1619,9 @@ internal sealed class SemanticNormalizer
             HashSet<string> userTypes,
             TypeReference currentInstanceType,
             string className,
-            GodotTypeCatalog godotTypes)
+            GodotTypeCatalog godotTypes,
+            ScriptTypeCatalog scriptTypes,
+            string classPath)
         {
             this.members = members;
             this.methods = methods;
@@ -1580,10 +1630,17 @@ internal sealed class SemanticNormalizer
             CurrentInstanceType = currentInstanceType;
             ClassName = className;
             GodotTypes = godotTypes;
+            ScriptTypes = scriptTypes;
+            ClassPath = classPath;
         }
 
         public TypeReference CurrentInstanceType { get; }
         public GodotTypeCatalog GodotTypes { get; }
+        public ScriptTypeCatalog ScriptTypes { get; }
+        public string ClassPath { get; }
+        // Track unknown field/index results by symbol type identity, not variable spelling, so
+        // aliases and shadowed locals cannot hide a receiver requiring its own cast.
+        public HashSet<TypeReference> UntypedMemberResults { get; } = new(ReferenceEqualityComparer.Instance);
         public string ClassName { get; }
         public TypeReference? ReturnType { get; set; }
         public Dictionary<string, SignalDeclaration> Signals { get; }
@@ -1598,12 +1655,31 @@ internal sealed class SemanticNormalizer
 
         public bool IsUserMethod(string name) => methods.ContainsKey(name);
 
+        public TypeReference? ResolveMember(MemberAccessExpression member)
+        {
+            var receiver = member.Target is CurrentInstanceExpression ? new TypeReference(ClassPath)
+                : ResolveType(member.Target, this) ?? StaticReceiver(member.Target);
+            return ScriptTypes.ResolveMember(receiver, member.Member, ClassPath);
+        }
+
+        // Only an unshadowed type-name expression can select static script declarations.
+        public TypeReference? StaticReceiver(Expression expression)
+        {
+            var root = expression;
+            while (root is MemberAccessExpression member)
+                root = member.Target;
+            if (root is not ValueExpression value || Resolve(value.Text) is not null || IsUserMethod(value.Text))
+                return null;
+            var name = ReceiverName(expression);
+            return ScriptTypes.IsClass(name, ClassPath) ? new TypeReference(name) : null;
+        }
+
         /* Ordinary invocations keep their source shape in the model. Bind their result from
            the class-wide signature table, never by inspecting return statements. Signatures
            are available before bodies, so forward calls and recursive methods work equally.
            Locals/parameters/fields may shadow an unqualified method name. Only the current
-           instance or the current class's static methods are resolved here; arbitrary user
-           receivers require a separate class-symbol catalog and must not be guessed.
+           instance uses the current class's bound signatures. Other declared script types
+           use the shared catalog; unavailable external declarations remain unresolved.
            Arity includes optional parameters. For overloads, accept a unique exact argument
            match; otherwise reject ambiguity instead of silently selecting the first result. */
         public TypeReference? ResolveCall(InvocationExpression invocation)
@@ -1625,6 +1701,13 @@ internal sealed class SemanticNormalizer
                     name = member.Member;
                     staticOnly = true;
                     break;
+                case MemberAccessExpression member:
+                    var receiver = ResolveType(member.Target, this);
+                    var staticReceiver = receiver is null ? StaticReceiver(member.Target) : null;
+                    receiver ??= staticReceiver;
+                    return receiver is null ? null : ScriptTypes.ResolveCall(receiver, member.Member,
+                        invocation.Arguments, staticReceiver is not null, ClassPath,
+                        expression => ResolveType(expression, this), invocation);
                 default:
                     return null;
             }

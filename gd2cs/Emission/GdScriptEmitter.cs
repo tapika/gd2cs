@@ -146,7 +146,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     EmitCallable(output, destructor, memberIndent);
                     break;
                 case NestedClassDeclaration nested:
-                    EmitClass(output, new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements), "", false);
+                    EmitClass(output, new ClassDeclaration(nested.Name, nested.BaseType, false, nested.Elements), memberIndent, false);
                     break;
                 default:
                     throw new NotSupportedException("Unsupported language dialect.");

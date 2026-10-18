@@ -91,3 +91,60 @@ func nestedIndex(transform: Transform3D, axis: int) -> float:
 	var column := transform[axis]
 	var component := transform[axis][axis]
 	return column[axis] + component
+
+class NodeSource:
+	var Collision : CollisionShape3D
+
+	static func create() -> NodeSource:
+		return NodeSource.new()
+
+func externalReceiver() -> BoxShape3D:
+	var source := NodeSource.create()
+	var collision : CollisionShape3D = source.Collision
+	return collision.shape as BoxShape3D
+
+func externalShape(source: NodeSource) -> BoxShape3D:
+	var collision : CollisionShape3D = source.Collision
+	var shape := collision.shape as BoxShape3D
+	collision.position = Vector3.ZERO
+	return shape
+
+func castShape(source: NodeSource) -> BoxShape3D:
+	return (source.Collision as CollisionShape3D).shape as BoxShape3D
+
+func declaredShape(source: NodeSource) -> BoxShape3D:
+	var collision := source.Collision
+	collision.position = Vector3.ZERO
+	return source.Collision.shape as BoxShape3D
+
+func returnedShape() -> BoxShape3D:
+	return BuiltInValues.NodeSource.create().Collision.shape as BoxShape3D
+
+func chainedData(group: DataGroup) -> int:
+	var data := group.Data
+	return data.Count + group.Data.Count
+
+func scopedData(first: FirstScope, second: SecondScope) -> float:
+	var left := first.getItem()
+	var right := second.getItem()
+	return left.Value + right.Value.x
+
+class DataGroup:
+	var Data : DataValue
+
+class DataValue:
+	var Count := 2
+
+class FirstScope:
+	func getItem() -> Item:
+		return Item.new()
+
+	class Item:
+		var Value : int
+
+class SecondScope:
+	func getItem() -> Item:
+		return Item.new()
+
+	class Item:
+		var Value : Vector3
