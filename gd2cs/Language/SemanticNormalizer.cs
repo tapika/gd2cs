@@ -1318,6 +1318,20 @@ internal sealed class SemanticNormalizer
         {
             return new GodotMemberAccessExpression(target, reference);
         }
+        // Unlike unresolved user classes, a known Variant cannot expose arbitrary instance members
+        // in C#. Cast the receiver, not the eventual result of the property access or method call.
+        if (receiverType?.Kind == TypeKind.Variant)
+        {
+            var example = target is ValueExpression value ? value.Text : "value";
+            if (target is InvocationExpression invocation && invocation.Target is ValueExpression method
+                && invocation.Arguments.Arguments.Count == 0)
+                example = method.Text + "()";
+            throw SourceLocations.Error(member,
+                "Variant member access requires an explicit 'as' cast before '." + member.Member
+                + "'; use '(" + example + " as ConcreteType)." + member.Member
+                + "' with the appropriate concrete type (C#: '(" + example
+                + ".AsGodotObject() as ConcreteType)." + member.Member + "' for object values).");
+        }
         return member with { Target = target };
     }
 

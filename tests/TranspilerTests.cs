@@ -440,6 +440,67 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].IndexOf(token, StringComparison.Ordinal) + 1, error.Column);
     }
 
+    [Theory]
+    [InlineData(".gd", "getValue().Value", "getValue()")]
+    [InlineData(".gd", "(getValue()).Value", "value")]
+    [InlineData(".gd", "value.Value", "value")]
+    [InlineData(".gd", "local.Value", "local")]
+    [InlineData(".gd", "field.Value", "field")]
+    [InlineData(".gd", "getValue().update()", "getValue()")]
+    [InlineData(".gd", "float(getValue().Value)", "getValue()")]
+    [InlineData(".cs", "getValue().Value", "getValue()")]
+    [InlineData(".cs", "value.Value", "value")]
+    [InlineData(".cs", "local.Value", "local")]
+    [InlineData(".cs", "field.Value", "field")]
+    [InlineData(".cs", "getValue().update()", "getValue()")]
+    public void RejectVariantMembers(string extension, string expression, string example)
+    {
+        var gd = $$"""
+            class_name VariantMembers
+            extends RefCounted
+
+            var field: Variant
+
+            func getValue() -> Variant:
+                return field
+
+            func access(value: Variant):
+                var local := getValue()
+                var result := {{expression}}
+            """;
+        var cs = $$"""
+            using Godot;
+            using System;
+
+            [GlobalClass]
+            public partial class VariantMembers : RefCounted
+            {
+                public Variant field;
+
+                public Variant getValue()
+                {
+                    return field;
+                }
+
+                public void access(Variant value)
+                {
+                    var local = getValue();
+                    var result = {{expression}};
+                }
+            }
+            """;
+        var source = extension == ".gd" ? gd : cs;
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("Variant member access requires an explicit 'as' cast", error.Message);
+        Assert.Contains("(" + example + " as ConcreteType)", error.Message);
+        var lines = source.Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(expression, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        var receiver = expression.StartsWith("float(", StringComparison.Ordinal) ? "getValue()" : expression;
+        Assert.Equal(lines[line].IndexOf(receiver, StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public static void CheckDictionaryReads()
     {

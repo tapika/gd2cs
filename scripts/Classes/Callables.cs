@@ -60,6 +60,16 @@ public partial class Callables : RefCounted
 		return value;
 	}
 
+	public Variant getValue()
+	{
+		return this;
+	}
+
+	public int readValue()
+	{
+		return (getValue().AsGodotObject() as Callables).Value;
+	}
+
 	// Handles cleanup.
 	~Callables()
 	{

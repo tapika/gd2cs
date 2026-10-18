@@ -47,6 +47,12 @@ func apply(
 static func evaluate(value: int) -> int:
 	return value
 
+func getValue() -> Variant:
+	return self
+
+func readValue() -> int:
+	return (getValue() as Callables).Value
+
 # Handles cleanup.
 func _exit_tree():
 	Enabled = Enabled
