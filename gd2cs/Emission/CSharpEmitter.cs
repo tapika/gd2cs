@@ -88,6 +88,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 case FieldDeclaration field:
                     EmitField(output, field, indent);
                     break;
+                case PropertyDeclaration property:
+                    EmitProperty(output, property, indent);
+                    break;
                 case SignalDeclaration signal:
                     output.AppendLine(indent + "    [Signal]");
                     output.Append(indent + "    public delegate void ");
@@ -185,6 +188,40 @@ public sealed class CSharpEmitter : IScriptEmitter
         output.Append(" = ");
         EmitExpression(output, field.Initializer, indent);
         output.AppendLine(";");
+    }
+
+    // Explicit accessor blocks share statement emission; setter aliases are a C#-only detail.
+    private void EmitProperty(StringBuilder output, PropertyDeclaration property, string indent)
+    {
+        output.Append(indent + "    public ");
+        if (property.IsStatic)
+            output.Append("static ");
+        EmitType(output, property.Type);
+        output.Append(' ');
+        output.AppendLine(property.Name);
+        output.AppendLine(indent + "    {");
+        foreach (var element in property.Elements)
+        {
+            if (element is not PropertyAccessorDeclaration accessor)
+            {
+                EmitBody(output, new List<SyntaxElement> { element }, indent + "        ");
+                continue;
+            }
+            output.AppendLine(indent + "        " + (accessor.IsGetter ? "get" : "set"));
+            output.AppendLine(indent + "        {");
+            var body = accessor.Elements;
+            if (!accessor.IsGetter && accessor.ParameterName != "value")
+            {
+                body = new List<SyntaxElement>
+                {
+                    new LocalVariableStatement(accessor.ParameterName!, property.Type, new ValueExpression("value"), LocalTyping.Inferred)
+                };
+                body.AddRange(accessor.Elements);
+            }
+            EmitBody(output, body, indent + "            ");
+            output.AppendLine(indent + "        }");
+        }
+        output.AppendLine(indent + "    }");
     }
 
     private void EmitExpression(StringBuilder output, Expression expression, string indent)

@@ -92,6 +92,14 @@ public sealed record FieldDeclaration(
     bool IsInferred,
     bool IsStatic = false) : MemberDeclaration;
 
+// Accessors remain ordered elements so their comments and blank lines round-trip.
+public sealed record PropertyDeclaration(string Name, TypeReference Type, List<SyntaxElement> Elements,
+    bool IsStatic = false) : MemberDeclaration;
+
+// A getter has no parameter; a setter retains its GD parameter name (C# implicitly uses value).
+public sealed record PropertyAccessorDeclaration(bool IsGetter, string? ParameterName,
+    List<SyntaxElement> Elements) : SyntaxElement;
+
 // Declares a Godot signal; delegate suffixes and generated C# events are dialect details.
 public sealed record SignalDeclaration(string Name, ParameterList Parameters) : MemberDeclaration;
 

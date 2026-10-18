@@ -110,6 +110,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     EmitExpression(output, field.Initializer, memberIndent);
                     output.AppendLine();
                     break;
+                case PropertyDeclaration property:
+                    EmitProperty(output, property, memberIndent);
+                    break;
                 case SignalDeclaration signal:
                     output.Append(memberIndent + "signal ");
                     output.Append(signal.Name);
@@ -151,6 +154,36 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 default:
                     throw new NotSupportedException("Unsupported language dialect.");
             }
+        }
+    }
+
+    private void EmitProperty(StringBuilder output, PropertyDeclaration property, string indent)
+    {
+        output.Append(indent);
+        if (property.IsStatic)
+            output.Append("static ");
+        output.Append("var ");
+        output.Append(property.Name);
+        output.Append(space_colon);
+        EmitType(output, property.Type);
+        output.AppendLine(":");
+        foreach (var element in property.Elements)
+        {
+            if (element is not PropertyAccessorDeclaration accessor)
+            {
+                EmitBody(output, new List<SyntaxElement> { element }, indent + "\t");
+                continue;
+            }
+            output.Append(indent + "\t");
+            if (accessor.IsGetter)
+                output.AppendLine("get:");
+            else
+            {
+                output.Append("set(");
+                output.Append(accessor.ParameterName);
+                output.AppendLine("):");
+            }
+            EmitBody(output, accessor.Elements, indent + "\t\t");
         }
     }
 

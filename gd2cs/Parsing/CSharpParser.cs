@@ -115,6 +115,11 @@ public sealed class CSharpParser : IScriptParser
                     field.Initializer is not (ArrayExpression or DictionaryExpression)));
                 continue;
             }
+            if (tokens.PeekAfterNewLines().Kind == TokenKind.OpenBrace)
+            {
+                elements.Add(ParseProperty(type, memberName, isStatic));
+                continue;
+            }
             elements.Add(tokens.Current.Kind == TokenKind.OpenParenthesis
                 ? ParseMethod(type, memberName, isStatic, isOverride)
                 : ParseScalarAfterName(type, memberName) with { IsStatic = isStatic });
@@ -127,6 +132,41 @@ public sealed class CSharpParser : IScriptParser
 
     private static NestedClassDeclaration ToNested(ClassDeclaration declaration) =>
         new(declaration.Name, declaration.BaseType, declaration.Elements);
+
+    // C# setter parameters are implicit. Fold only our leading alias when value is otherwise unused.
+    private PropertyDeclaration ParseProperty(TypeReference type, string name, bool isStatic)
+    {
+        EndOfLine(optional: true);
+        tokens.Expect(TokenKind.OpenBrace);
+        EndOfLine();
+        var elements = new List<SyntaxElement>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (tokens.Current.Kind != TokenKind.CloseBrace)
+        {
+            if (ParseTrivia(elements))
+                continue;
+            var accessor = tokens.Expect(TokenKind.Identifier);
+            if (accessor.Text is not ("get" or "set") || !seen.Add(accessor.Text))
+                throw new ParseException("Expected one get and/or set accessor.", accessor.Line, accessor.Column);
+            if (tokens.Current.Kind == TokenKind.Semicolon)
+                throw new ParseException("Auto-properties are not supported; use explicit accessor bodies and a backing field.", accessor.Line, accessor.Column);
+            var body = ParseBracedBody();
+            var parameter = accessor.Text == "get" ? null : "value";
+            if (parameter is not null && body.FirstOrDefault() is LocalVariableStatement local
+                && local.Typing == LocalTyping.Inferred && local.Initializer is ValueExpression { Text: "value" }
+                && local.Name != "value" && !PropertySemantics.UsesBareValue(body.Skip(1)))
+            {
+                parameter = local.Name;
+                body.RemoveAt(0);
+            }
+            elements.Add(SourceLocations.Record(new PropertyAccessorDeclaration(accessor.Text == "get", parameter, body), accessor));
+        }
+        tokens.Expect(TokenKind.CloseBrace);
+        EndOfLine(optional: true);
+        if (seen.Count == 0)
+            throw new ParseException("A property requires at least one accessor.", tokens.Current.Line, tokens.Current.Column);
+        return new PropertyDeclaration(name, type, elements, isStatic);
+    }
 
     // Godot registers the delegate name without EventHandler as the exact signal name.
     private SignalDeclaration ParseSignal()

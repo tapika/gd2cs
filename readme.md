@@ -120,7 +120,33 @@ var state = SharedStateScript.getInstance()
 
 Use `=` to retain dynamic access to the returned C# instance's members. Call the getter instead of `.new()` to reuse the shared instance; do not access `SharedStateScript.Shared` directly. The same pattern works with the GDScript resource path and does not require a Godot Autoload.
 
-## Unsupported language features
+## C# and GDScript interoperability
+
+### Typed properties
+
+Prefer a typed property when the same receiver type is needed outside one function. A getter can expose a singleton without repeating its lookup or caching an instance:
+
+```gdscript
+var planner : SharedState:
+    get:
+        return SharedState.getInstance()
+```
+
+gd2cs maps this to a C# `SharedState planner` property with a `get` block. All methods can then use `planner`; its declared type participates in member resolution. Members of unavailable external classes still require explicit type information where needed.
+
+Read/write properties use explicit accessor blocks and a separately named backing field:
+
+```gdscript
+var storedCount := 0
+var count : int:
+    get:
+        return storedCount
+    set(value):
+        storedCount = value
+```
+
+Read-only, write-only, static and nested properties are supported. Custom setter parameter names are preserved using a reversible C# local alias of `value`. Use explicit blocks: auto-properties, property initializers and GDScript's implicit self-referencing backing storage are not supported.
+
 
 ### Return types
 

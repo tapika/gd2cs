@@ -79,7 +79,12 @@ public sealed class GdScriptParser : IScriptParser
             }
             if (kind is not ("const" or "var"))
                 throw new ParseException("Expected a class element", tokens.Current.Line, tokens.Current.Column);
-            var member = ParseScalar(kind == "const");
+            var member = ParseScalar(kind == "const", column);
+            if (member is PropertyDeclaration property)
+            {
+                elements.Add(property with { IsStatic = isStatic });
+                continue;
+            }
             elements.Add(member is FieldDeclaration field
                 ? field with { IsStatic = isStatic }
                 : member);
@@ -297,12 +302,18 @@ public sealed class GdScriptParser : IScriptParser
     }
 
     // Field initializers share the expression grammar used in callable bodies, including construction.
-    private MemberDeclaration ParseScalar(bool isConstant)
+    private MemberDeclaration ParseScalar(bool isConstant, int declarationColumn)
     {
         var name = tokens.Expect(TokenKind.Identifier).Text;
         tokens.Expect(TokenKind.Colon);
         var inferred = tokens.TryConsume(TokenKind.Equals);
         var type = inferred ? new TypeReference("Variant") : ParseHintedType();
+        if (!inferred && tokens.TryConsume(TokenKind.Colon))
+        {
+            if (isConstant)
+                throw new ParseException("Constants cannot have accessors.", tokens.Current.Line, tokens.Current.Column);
+            return ParseProperty(name, type, declarationColumn);
+        }
         if (!inferred && !tokens.TryConsume(TokenKind.Equals))
         {
             if (isConstant)
@@ -310,11 +321,45 @@ public sealed class GdScriptParser : IScriptParser
             return new FieldDeclaration(name, type, null, false);
         }
         var value = ParseExpression();
+        if (tokens.Current.Kind == TokenKind.Colon)
+            throw new ParseException("Property initializers are not supported; use a separately named backing field.", tokens.Current.Line, tokens.Current.Column);
         if (inferred)
             type = InferExpressionType(value);
         return isConstant
             ? new ConstantDeclaration(name, type, value, inferred)
             : new FieldDeclaration(name, type, value, inferred);
+    }
+
+    // Accessors share normal statement parsing but are bounded by their own indentation.
+    private PropertyDeclaration ParseProperty(string name, TypeReference type, int declarationColumn)
+    {
+        EndOfLine();
+        var elements = new List<SyntaxElement>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (tokens.Current.Kind != TokenKind.EndOfFile)
+        {
+            if (tokens.PeekAfterNewLines().Column <= declarationColumn)
+                break;
+            if (ParseTrivia(elements))
+                continue;
+            var accessor = tokens.Expect(TokenKind.Identifier);
+            if (accessor.Text is not ("get" or "set") || !seen.Add(accessor.Text))
+                throw new ParseException("Expected one get and/or set accessor.", accessor.Line, accessor.Column);
+            string? parameter = null;
+            if (accessor.Text == "set")
+            {
+                tokens.Expect(TokenKind.OpenParenthesis);
+                parameter = tokens.Expect(TokenKind.Identifier).Text;
+                tokens.Expect(TokenKind.CloseParenthesis);
+            }
+            tokens.Expect(TokenKind.Colon);
+            EndOfLine();
+            elements.Add(SourceLocations.Record(
+                new PropertyAccessorDeclaration(accessor.Text == "get", parameter, ParseBody(accessor.Column)), accessor));
+        }
+        if (seen.Count == 0)
+            throw new ParseException("A property requires at least one accessor.", tokens.Current.Line, tokens.Current.Column);
+        return new PropertyDeclaration(name, type, elements);
     }
 
     // Infers homogeneous array declarations so indexed access can be bound to the element type.

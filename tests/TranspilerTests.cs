@@ -147,6 +147,27 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData(".gd", "return Selected", "return TargetNode", "separately named backing field")]
+    [InlineData(".gd", "return Selected", "return self.TargetNode", "separately named backing field")]
+    [InlineData(".cs", "return Selected;", "return TargetNode;", "separately named backing field")]
+    [InlineData(".cs", "return Selected;", "return this.TargetNode;", "separately named backing field")]
+    [InlineData(".gd", "var TargetNode : Node3D:", "var TargetNode : Node3D = Selected:", "Property initializers are not supported")]
+    [InlineData(".cs", "get\n\t\t{\n\t\t\treturn Selected;\n\t\t}", "get;", "Auto-properties are not supported")]
+    [InlineData(".gd", "Stored = value", "return value", "Cannot return a value from a void callable")]
+    [InlineData(".cs", "Stored = value;", "return value;", "Cannot return a value from a void callable")]
+    [InlineData(".gd", "Stored = incoming", "Stored = value", "A custom setter parameter reserves")]
+    public void RejectProperties(string extension, string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Properties/Accessors" + extension))
+            .ReplaceLineEndings("\n").Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains(message, error.Message);
+        Assert.True(error.Line > 1);
+        Assert.True(error.Column > 0);
+    }
+
+    [Theory]
     [InlineData(".gd", false, false)]
     [InlineData(".gd", false, true)]
     [InlineData(".gd", true, false)]
@@ -833,7 +854,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(26, r.Count);
+        Assert.Equal(27, r.Count);
         return r;
     }
 

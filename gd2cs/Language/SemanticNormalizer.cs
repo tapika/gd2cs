@@ -83,6 +83,8 @@ internal sealed class SemanticNormalizer
         {
             if (element is FieldDeclaration field)
                 members[field.Name] = field.Type;
+            else if (element is PropertyDeclaration property)
+                members[property.Name] = property.Type;
             else if (element is ConstantDeclaration constant)
                 members[constant.Name] = constant.Type;
             else if (element is MethodDeclaration method)
@@ -149,6 +151,7 @@ internal sealed class SemanticNormalizer
     private SyntaxElement NormalizeDeclarationTypes(SyntaxElement element, HashSet<string> userTypes) => element switch
     {
         FieldDeclaration field => field with { Type = NormalizeType(field.Type, userTypes) },
+        PropertyDeclaration property => property with { Type = NormalizeType(property.Type, userTypes) },
         ConstantDeclaration constant => constant with { Type = NormalizeType(constant.Type, userTypes) },
         MethodDeclaration method => method with
         {
@@ -192,6 +195,7 @@ internal sealed class SemanticNormalizer
         SignalDeclaration signal => signal with { Parameters = NormalizeParameters(signal.Parameters, scope) },
         ConstantDeclaration constant => NormalizeConstant(constant, scope),
         FieldDeclaration field => NormalizeField(field, scope),
+        PropertyDeclaration property => NormalizeProperty(property, scope),
         NestedClassDeclaration nested => NormalizeNestedClass(nested, scope),
         ConstructorDeclaration constructor => constructor with
         {
@@ -209,6 +213,38 @@ internal sealed class SemanticNormalizer
         },
         _ => element
     };
+
+    // Accessors share callable scopes, with the property type supplying getter returns and setter inputs.
+    private PropertyDeclaration NormalizeProperty(PropertyDeclaration property, BindingScope scope)
+    {
+        var previous = scope.AccessorProperty;
+        scope.AccessorProperty = property.Name;
+        try
+        {
+            var elements = new List<SyntaxElement>();
+            foreach (var element in property.Elements)
+            {
+                if (element is not PropertyAccessorDeclaration accessor)
+                {
+                    elements.Add(element);
+                    continue;
+                }
+                if (!accessor.IsGetter && accessor.ParameterName != "value" && PropertySemantics.UsesBareValue(accessor.Elements))
+                    throw SourceLocations.Error(accessor,
+                        "A custom setter parameter reserves C#'s implicit 'value'; qualify a field as self.value or rename the local.");
+                var parameters = new ParameterList(accessor.IsGetter ? new List<ParameterDeclaration>()
+                    : new List<ParameterDeclaration> { new(accessor.ParameterName!, property.Type, false) }, false);
+                var body = NormalizeCallable(parameters, accessor.Elements, scope, property.IsStatic,
+                    accessor.IsGetter ? property.Type : new TypeReference("void"));
+                elements.Add(accessor with { Elements = body });
+            }
+            return property with { Elements = elements };
+        }
+        finally
+        {
+            scope.AccessorProperty = previous;
+        }
+    }
 
     private ConstantDeclaration NormalizeConstant(ConstantDeclaration constant, BindingScope scope)
     {
@@ -615,6 +651,9 @@ internal sealed class SemanticNormalizer
     {
         var normalized = expression switch
         {
+            // GD's implicit backing-storage reads would recurse in C#; require an explicit backing field.
+            ValueExpression value when value.Text == scope.AccessorProperty && !scope.IsLocalName(value.Text) =>
+                throw SourceLocations.Error(value, "Self-referencing property accessors are not supported; use a separately named backing field."),
             TypeCheckExpression test => NormalizeTypeCheck(test, scope),
             ValueExpression value when scope.FindNarrowed(value.Text) is { } narrowed => narrowed,
             // A lambda adds a lexical scope; captured names resolve through its enclosing frames.
@@ -1358,6 +1397,8 @@ internal sealed class SemanticNormalizer
     */
     private Expression NormalizeMemberAccess(MemberAccessExpression member, BindingScope scope)
     {
+        if (member.Target is CurrentInstanceExpression && member.Member == scope.AccessorProperty)
+            throw SourceLocations.Error(member, "Self-referencing property accessors are not supported; use a separately named backing field.");
         if (TryNormalizeEnum(member, scope, out var constant))
             return constant;
         if (TryNormalizeStaticMember(member, scope, out var staticMember))
@@ -1643,6 +1684,7 @@ internal sealed class SemanticNormalizer
         public HashSet<TypeReference> UntypedMemberResults { get; } = new(ReferenceEqualityComparer.Instance);
         public string ClassName { get; }
         public TypeReference? ReturnType { get; set; }
+        public string? AccessorProperty { get; set; }
         public Dictionary<string, SignalDeclaration> Signals { get; }
         // Shared across callable scopes within one class; records the required native handler signatures.
         public Dictionary<string, List<TypeReference>> HandlerTypes { get; } = new(StringComparer.Ordinal);
@@ -1654,6 +1696,7 @@ internal sealed class SemanticNormalizer
         public bool HasCurrentInstance { get; set; }
 
         public bool IsUserMethod(string name) => methods.ContainsKey(name);
+        public bool IsLocalName(string name) => frames.Any(frame => frame.ContainsKey(name));
 
         public TypeReference? ResolveMember(MemberAccessExpression member)
         {
