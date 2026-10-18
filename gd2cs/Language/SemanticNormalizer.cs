@@ -1239,9 +1239,11 @@ internal sealed class SemanticNormalizer
             // Static bodies may bind static methods, but cannot capture an instance method.
             var types = declaration.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
             if (declaration.ReturnType.Kind != TypeKind.Void || types.Count != signal.ParameterTypes.Count)
-                throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count.");
+                throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count. "
+                    + DescribeSignalSignatures(signal, name, declaration.ReturnType, types));
             if (!types.Zip(signal.ParameterTypes).All(pair => SameSignalType(pair.First, pair.Second)))
-                throw SourceLocations.Error(invocation, "Signal handler parameter types are incompatible with the native event.");
+                throw SourceLocations.Error(invocation, "Signal handler parameter types are incompatible with the native event. "
+                    + DescribeSignalSignatures(signal, name, declaration.ReturnType, types));
             // One method must satisfy every event it handles, including later disconnect calls.
             if (scope.HandlerTypes.TryGetValue(name, out var existing)
                 && (existing.Count != signal.ParameterTypes.Count
@@ -1258,11 +1260,14 @@ internal sealed class SemanticNormalizer
         if (handler is LambdaExpression lambda)
         {
             // Lambda parameters provide a checkable signature without requiring a named method.
+            var types = lambda.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
             if (lambda.ReturnType.Kind != TypeKind.Void || lambda.Parameters.Parameters.Count != signal.ParameterTypes.Count)
-                throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count.");
-            if (!lambda.Parameters.Parameters.Select(parameter => parameter.Type).Zip(signal.ParameterTypes)
+                throw SourceLocations.Error(invocation, "Signal handler must return void and match the signal's argument count. "
+                    + DescribeSignalSignatures(signal, "lambda", lambda.ReturnType, types));
+            if (!types.Zip(signal.ParameterTypes)
                 .All(pair => SameSignalType(pair.First, pair.Second)))
-                throw SourceLocations.Error(invocation, "Signal handler parameter types are incompatible with the native event.");
+                throw SourceLocations.Error(invocation, "Signal handler parameter types are incompatible with the native event. "
+                    + DescribeSignalSignatures(signal, "lambda", lambda.ReturnType, types));
             var bound = EventParameterConversions.Bind(lambda.Parameters, lambda.Elements, signal.ParameterTypes,
                 fold: language == ScriptLanguage.CSharp);
             // A generated block wrapping one inline expression returns to the original script lambda.
@@ -1278,6 +1283,30 @@ internal sealed class SemanticNormalizer
         if (handler is not CallableMethodGroupExpression && ResolveType(handler, scope)?.Kind == TypeKind.Callable)
             throw SourceLocations.Error(invocation, "Signal events require a named method or inline lambda, not a Callable value.");
         throw SourceLocations.Error(invocation, "Signal connection requires an unambiguous named void handler in this class or an inline lambda.");
+    }
+
+    // Use CLR-facing names in diagnostics so native widths (especially float versus double)
+    // remain visible instead of both appearing as GDScript float.
+    private static string DescribeSignalSignatures(GodotSignalReference signal, string handler,
+        TypeReference returnType, List<TypeReference> parameters) =>
+        "Expected C# signature: void " + signal.DeclaringType + "." + signal.Name
+        + "(" + string.Join(", ", signal.ParameterTypes.Select(DiagnosticTypeName)) + "). "
+        + "Handler signature: " + DiagnosticTypeName(returnType) + " " + handler
+        + "(" + string.Join(", ", parameters.Select(DiagnosticTypeName)) + ").";
+
+    private static string DiagnosticTypeName(TypeReference type)
+    {
+        var name = type.Kind switch
+        {
+            TypeKind.Int64 => "long",
+            TypeKind.Float64 => "double",
+            TypeKind.String => "string",
+            TypeKind.Array => "Godot.Collections.Array",
+            TypeKind.Dictionary => "Godot.Collections.Dictionary",
+            _ => type.Name
+        };
+        return type.TypeArguments.Count == 0 ? name
+            : name + "<" + string.Join(", ", type.TypeArguments.Select(DiagnosticTypeName)) + ">";
     }
 
     // Independently parsed generic argument lists need structural comparison, not record/list identity.
