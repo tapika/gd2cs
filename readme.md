@@ -122,6 +122,10 @@ Use `=` to retain dynamic access to the returned C# instance's members. Call the
 
 ## Unsupported language features
 
+### Return types
+
+Functions returning a value must declare a return type (`-> Type` in GDScript). gd2cs treats an omitted return annotation as `void` and reports an error at any value-returning `return`. Bare `return` remains supported in void functions.
+
 ### Membership operator
 
 GDScript membership expressions such as `value in values` are not supported. Use `values.has(value)` instead: arrays translate to C# `Contains(value)`, dictionaries to `ContainsKey(value)`. For example, `[1, 2, 3].has(value)` replaces `value in [1, 2, 3]`. Negate `.has()` with `not` when needed. This restriction does not affect `for value in values` loops.

@@ -256,12 +256,13 @@ public sealed class CSharpParser : IScriptParser
                 elements.Add(new ContinueStatement());
                 continue;
             }
+            var returnToken = tokens.Current;
             if (tokens.TryConsume(TokenKind.Identifier, "return"))
             {
                 var returnValue = tokens.Current.Kind == TokenKind.Semicolon ? null : ParseExpression();
                 tokens.Expect(TokenKind.Semicolon);
                 EndOfLine();
-                elements.Add(new ReturnStatement(returnValue));
+                elements.Add(SourceLocations.Record(new ReturnStatement(returnValue), returnToken));
                 continue;
             }
             if (IsLocalDeclaration())

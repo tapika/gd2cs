@@ -277,7 +277,7 @@ internal sealed class SemanticNormalizer
         parameters = NormalizeParameterTypes(parameters, scope.UserTypes);
         var hadCurrentInstance = scope.HasCurrentInstance;
         var previousReturnType = scope.ReturnType;
-        scope.ReturnType = returnType;
+        scope.ReturnType = returnType ?? new TypeReference("void");
         scope.HasCurrentInstance = !isStatic;
         scope.Push();
         try
@@ -316,10 +316,7 @@ internal sealed class SemanticNormalizer
     private SyntaxElement NormalizeBodyElement(SyntaxElement element, BindingScope scope) => element switch
     {
         AssignmentStatement statement => NormalizeAssignment(statement, scope),
-        ReturnStatement statement => statement with
-        {
-            Value = NormalizeTypedValue(scope.ReturnType, statement.Value, scope)
-        },
+        ReturnStatement statement => NormalizeReturn(statement, scope),
         ExpressionStatement statement => statement with
         {
             Expression = NormalizeExpression(statement.Expression, scope)
@@ -343,6 +340,16 @@ internal sealed class SemanticNormalizer
         var target = NormalizeExpression(statement.Target, scope, allowVariantDictionaryRead: statement.Operator == "=");
         var value = NormalizeTypedValue(ResolveType(target, scope), statement.Value, scope)!;
         return statement with { Target = target, Value = value };
+    }
+
+    // Nested blocks share the callable's return type; nested lambdas install their own scope.
+    // Omitted GDScript return annotations default to void in our supported dialect.
+    private ReturnStatement NormalizeReturn(ReturnStatement statement, BindingScope scope)
+    {
+        if (statement.Value is not null && scope.ReturnType?.Kind == TypeKind.Void)
+            throw SourceLocations.Error(statement,
+                "Cannot return a value from a void callable; declare an explicit return type (GDScript: '-> Type') or use bare 'return'.");
+        return statement with { Value = NormalizeTypedValue(scope.ReturnType, statement.Value, scope) };
     }
 
     // Retains static typing when GDScript cannot infer it from the emitted expression.

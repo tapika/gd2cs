@@ -180,7 +180,7 @@ public sealed class GdScriptParser : IScriptParser
             if (tokens.TryConsume(TokenKind.Identifier, "return"))
             {
                 var returnValue = tokens.Current.Kind is TokenKind.NewLine or TokenKind.EndOfFile ? null : ParseExpression();
-                elements.Add(new ReturnStatement(returnValue));
+                elements.Add(SourceLocations.Record(new ReturnStatement(returnValue), statementToken));
                 EndOfLine(optional: true);
                 continue;
             }
@@ -632,11 +632,12 @@ public sealed class GdScriptParser : IScriptParser
         List<SyntaxElement> elements;
         if (isInline)
         {
+            var returnToken = tokens.Current;
             var isReturn = tokens.TryConsume(TokenKind.Identifier, "return");
             var value = ParseExpression();
             elements = new List<SyntaxElement>
             {
-                isReturn ? new ReturnStatement(value) : new ExpressionStatement(value)
+                isReturn ? SourceLocations.Record(new ReturnStatement(value), returnToken) : new ExpressionStatement(value)
             };
         }
         else

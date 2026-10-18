@@ -146,6 +146,56 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
     }
 
+    [Theory]
+    [InlineData(".gd", false, false)]
+    [InlineData(".gd", false, true)]
+    [InlineData(".gd", true, false)]
+    [InlineData(".gd", true, true)]
+    [InlineData(".cs", true, false)]
+    [InlineData(".cs", true, true)]
+    public void RejectVoidReturns(string extension, bool explicitVoid, bool nested)
+    {
+        var source = File.ReadAllText(Fixture("Classes/Callables" + extension));
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        if (extension == ".gd")
+        {
+            source = source.Replace("static func evaluate(value: int) -> int:",
+                "static func evaluate(value: int)" + (explicitVoid ? " -> void:" : ":"));
+            if (nested)
+                source = source.Replace("\treturn value", "\tif true:\n\t\treturn value");
+        }
+        else
+        {
+            source = source.Replace("public static int evaluate(int value)", "public static void evaluate(int value)");
+            if (nested)
+                source = source.Replace("\t\treturn value;", "\t\tif (true)\n\t\t{\n\t\t\treturn value;\n\t\t}");
+        }
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("Cannot return a value from a void callable", error.Message);
+        Assert.Contains("declare an explicit return type", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains("return value", StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf("return", StringComparison.Ordinal) + 1, error.Column);
+    }
+
+    [Theory]
+    [InlineData(".gd", "self.Value = value", "return value")]
+    [InlineData(".gd", "Enabled = Enabled", "return Value")]
+    [InlineData(".cs", "this.Value = value;", "return value;")]
+    [InlineData(".cs", "Enabled = Enabled;", "return Value;")]
+    public void RejectLifecycleReturns(string extension, string original, string replacement)
+    {
+        var source = File.ReadAllText(Fixture("Classes/Callables" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains("Cannot return a value from a void callable", error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf("return", StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public void ScalarFormat()
     {
