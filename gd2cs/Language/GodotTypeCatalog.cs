@@ -72,6 +72,8 @@ public sealed class GodotTypeCatalog
         TypeReference ResultType);
 
     private readonly List<Constructor> constructors;
+    // Integer indexers on built-in value types have concrete results, unlike Variant collection access.
+    private readonly Dictionary<string, TypeReference> valueIndexerTypes;
     private sealed record CatalogSignal(string ReceiverType, string DeclaringType, string Name,
         string GdScriptName, List<TypeReference> ParameterTypes);
     // Finds native signals by concrete receiver type and GDScript spelling.
@@ -115,9 +117,11 @@ public sealed class GodotTypeCatalog
         List<GlobalFunction> globalFunctions,
         List<InstanceMethod> methods,
         List<GlobalFunction>? staticMethods = null,
-        List<CatalogSignal>? signals = null)
+        List<CatalogSignal>? signals = null,
+        Dictionary<string, TypeReference>? valueIndexerTypes = null)
     {
         this.constructors = constructors;
+        this.valueIndexerTypes = valueIndexerTypes ?? new Dictionary<string, TypeReference>(StringComparer.Ordinal);
         gdScriptSignals = new Dictionary<string, CatalogSignal>(StringComparer.Ordinal);
         cSharpSignals = new Dictionary<string, CatalogSignal>(StringComparer.Ordinal);
         signalsByIdentity = new Dictionary<string, CatalogSignal>(StringComparer.Ordinal);
@@ -239,7 +243,19 @@ public sealed class GodotTypeCatalog
             new("Button", "BaseButton", "Pressed", "pressed", new List<TypeReference>()),
             new("Button", "BaseButton", "Toggled", "toggled", new List<TypeReference> { new("bool") }),
             new("OptionButton", "OptionButton", "ItemSelected", "item_selected", new List<TypeReference> { new("int64") })
-        ]);
+        ],
+        new Dictionary<string, TypeReference>(StringComparer.Ordinal)
+        {
+            ["Vector2"] = new("float"),
+            ["Vector3"] = new("float"),
+            ["Vector4"] = new("float"),
+            ["Color"] = new("float"),
+            ["Quaternion"] = new("float"),
+            ["Transform3D"] = new("Vector3")
+        });
+
+    public bool TryResolveValueIndexer(string receiverType, out TypeReference resultType) =>
+        valueIndexerTypes.TryGetValue(receiverType, out resultType!);
 
     // Loads constructor metadata from the Godot installation selected for this project.
     public static GodotTypeCatalog Load(string projectPath, string? godotPath)
@@ -476,6 +492,7 @@ public sealed class GodotTypeCatalog
         var methods = new List<InstanceMethod>();
         var staticMethods = new List<GlobalFunction>();
         var signals = new List<CatalogSignal>();
+        var valueIndexerTypes = new Dictionary<string, TypeReference>(StringComparer.Ordinal);
         var memberKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in SafeGetTypes(assembly))
         {
@@ -492,6 +509,8 @@ public sealed class GodotTypeCatalog
             if (!type.IsValueType)
                 continue;
 
+            IndexValueIndexer(type, valueIndexerTypes);
+
             // Value types always have a valid default construction even if reflection omits it.
             constructors.Add(new Constructor(type.Name, 0, 0, false));
             foreach (var constructor in type.GetConstructors(BindingFlags.Instance | BindingFlags.Public))
@@ -507,7 +526,21 @@ public sealed class GodotTypeCatalog
                     hasParameterArray));
             }
         }
-        return new GodotTypeCatalog(constructors, members, globalFunctions, methods, staticMethods, signals);
+        return new GodotTypeCatalog(constructors, members, globalFunctions, methods, staticMethods, signals, valueIndexerTypes);
+    }
+
+    // Record readable single-integer indexers only. Do not infer from an ambiguous overload set
+    // or treat array/dictionary indexers as evidence that GDScript can statically infer their results.
+    private static void IndexValueIndexer(Type type, Dictionary<string, TypeReference> resultTypes)
+    {
+        var results = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Where(property => property.GetMethod?.IsPublic == true)
+            .Where(property => property.GetIndexParameters() is [var parameter] && parameter.ParameterType == typeof(int))
+            .Select(property => property.PropertyType)
+            .Distinct()
+            .ToList();
+        if (results.Count == 1)
+            resultTypes.Add(type.Name, ToTypeReference(results[0]));
     }
 
     // SignalName confirms this is a native Godot signal, not merely an arbitrary managed event.

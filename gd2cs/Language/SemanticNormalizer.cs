@@ -89,7 +89,7 @@ internal sealed class SemanticNormalizer
                 signals.Add(signal.Name, signal);
         }
 
-        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType, declaration.Name);
+        var scope = new BindingScope(members, methods, signals, userTypes, declaration.BaseType, declaration.Name, godotTypes);
         // Inference follows binding: constructors and static reads acquire their result
         // types from metadata. Resolve class-wide declarations before any method body.
         // Revisit forward dependencies until types stabilize, bounded by declaration count.
@@ -360,12 +360,12 @@ internal sealed class SemanticNormalizer
         var typing = statement.Typing;
         if (initializer is DictionaryExpression)
             typing = LocalTyping.Explicit;
-        if (typing == LocalTyping.Inferred && !CanGdScriptInfer(initializer))
+        if (typing == LocalTyping.Inferred && !CanGdScriptInfer(initializer, scope))
             typing = type is null ? LocalTyping.Dynamic : LocalTyping.InferredWithExplicitGdType;
         else if (language == ScriptLanguage.GdScript &&
                  typing == LocalTyping.Explicit &&
                  initializer is not null &&
-                 !CanGdScriptInfer(initializer))
+                 !CanGdScriptInfer(initializer, scope))
             typing = LocalTyping.InferredWithExplicitGdType;
         return SourceLocations.Copy(statement, statement with
         {
@@ -375,11 +375,12 @@ internal sealed class SemanticNormalizer
         });
     }
 
-    // Indexed collection access can remain Variant to Godot even when the neutral model knows T.
-    private static bool CanGdScriptInfer(Expression? expression) => expression switch
+    // Collection indexing remains conservative, but built-in value indexers have concrete native types.
+    private static bool CanGdScriptInfer(Expression? expression, BindingScope scope) => expression switch
     {
-        IndexExpression => false,
-        ParenthesizedExpression parenthesized => CanGdScriptInfer(parenthesized.Expression),
+        IndexExpression index => ResolveType(index.Target, scope) is { } receiver
+            && scope.GodotTypes.TryResolveValueIndexer(receiver.Name, out _),
+        ParenthesizedExpression parenthesized => CanGdScriptInfer(parenthesized.Expression, scope),
         _ => true
     };
 
@@ -1471,9 +1472,7 @@ internal sealed class SemanticNormalizer
             array.Elements.Count == 0 || ResolveType(array.Elements[0].Value, scope) is not { } elementType
                 ? new List<TypeReference>()
                 : new List<TypeReference> { elementType }),
-        IndexExpression index => ResolveType(index.Target, scope) is { } collectionType
-            ? collectionType.TypeArguments.ElementAtOrDefault(collectionType.Kind == TypeKind.Dictionary ? 1 : 0)
-            : null,
+        IndexExpression index => ResolveIndexType(index, scope),
         GodotMemberAccessExpression member => member.Member.ResultType,
         GodotStaticMemberExpression member => member.Member.ResultType,
         GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
@@ -1481,6 +1480,17 @@ internal sealed class SemanticNormalizer
         ParenthesizedExpression parenthesized => ResolveType(parenthesized.Expression, scope),
         _ => null
     };
+
+    // Resolve collection elements from their schema and built-in components from reflected indexers.
+    private static TypeReference? ResolveIndexType(IndexExpression index, BindingScope scope)
+    {
+        var receiver = ResolveType(index.Target, scope);
+        if (receiver is null)
+            return null;
+        if (receiver.Kind is TypeKind.Array or TypeKind.Dictionary || receiver.Name == "ArrayBuffer")
+            return receiver.TypeArguments.ElementAtOrDefault(receiver.Kind == TypeKind.Dictionary ? 1 : 0);
+        return scope.GodotTypes.TryResolveValueIndexer(receiver.Name, out var result) ? result : null;
+    }
 
     // Resolves inner lexical frames before falling back to the class-wide symbol table.
     private sealed class BindingScope
@@ -1497,7 +1507,8 @@ internal sealed class SemanticNormalizer
             Dictionary<string, SignalDeclaration> signals,
             HashSet<string> userTypes,
             TypeReference currentInstanceType,
-            string className)
+            string className,
+            GodotTypeCatalog godotTypes)
         {
             this.members = members;
             this.methods = methods;
@@ -1505,9 +1516,11 @@ internal sealed class SemanticNormalizer
             UserTypes = userTypes;
             CurrentInstanceType = currentInstanceType;
             ClassName = className;
+            GodotTypes = godotTypes;
         }
 
         public TypeReference CurrentInstanceType { get; }
+        public GodotTypeCatalog GodotTypes { get; }
         public string ClassName { get; }
         public TypeReference? ReturnType { get; set; }
         public Dictionary<string, SignalDeclaration> Signals { get; }

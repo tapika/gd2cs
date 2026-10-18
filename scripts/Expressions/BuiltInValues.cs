@@ -110,4 +110,28 @@ public partial class BuiltInValues : Node3D
 	{
 		return entries["bounds"].As<Aabb>();
 	}
+
+	public float indexedBounds(Aabb bounds, int axis)
+	{
+		var lower = bounds.Position[axis];
+		var upper = bounds.End[axis];
+		var extent = upper - lower;
+		return extent;
+	}
+
+	public float components(Vector2 point, Vector4 wide, Color tint, Quaternion rotation, int axis)
+	{
+		var coordinate = point[axis];
+		var wideCoordinate = wide[axis];
+		var channel = tint[axis];
+		var component = (rotation[axis]);
+		return coordinate + wideCoordinate + channel + component;
+	}
+
+	public float nestedIndex(Transform3D transform, int axis)
+	{
+		var column = transform[axis];
+		var component = transform[axis][axis];
+		return column[axis] + component;
+	}
 }

@@ -73,3 +73,21 @@ func firstBounds(values: Array[AABB]) -> AABB:
 
 func extractBounds(entries: Dictionary[String, Variant]) -> AABB:
 	return entries["bounds"] as AABB
+
+func indexedBounds(bounds: AABB, axis: int) -> float:
+	var lower := bounds.position[axis]
+	var upper := bounds.end[axis]
+	var extent := upper - lower
+	return extent
+
+func components(point: Vector2, wide: Vector4, tint: Color, rotation: Quaternion, axis: int) -> float:
+	var coordinate := point[axis]
+	var wideCoordinate := wide[axis]
+	var channel := tint[axis]
+	var component := (rotation[axis])
+	return coordinate + wideCoordinate + channel + component
+
+func nestedIndex(transform: Transform3D, axis: int) -> float:
+	var column := transform[axis]
+	var component := transform[axis][axis]
+	return column[axis] + component
