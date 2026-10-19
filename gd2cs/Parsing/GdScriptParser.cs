@@ -115,9 +115,10 @@ public sealed class GdScriptParser : IScriptParser
         var returnType = new TypeReference("void");
         if (tokens.TryConsume(TokenKind.Arrow))
         {
-            returnType = ParseType();
+            returnType = ParseHintedType(expectBodyColon: true);
         }
-        tokens.Expect(TokenKind.Colon);
+        else
+            tokens.Expect(TokenKind.Colon);
         EndOfLine();
 
         var elements = ParseBody(declarationColumn);
@@ -388,17 +389,17 @@ public sealed class GdScriptParser : IScriptParser
         _ => new TypeReference("Variant")
     };
 
-    // Trailing hints on declarations and casts retain schemas Godot cannot nest in Array[].
-    private TypeReference ParseHintedType()
+    // Trailing hints retain schemas Godot cannot nest in Array[]; return hints follow the body colon.
+    private TypeReference ParseHintedType(bool expectBodyColon = false)
     {
         var opening = tokens.Current;
-        var type = ParseType(true);
+        var type = ParseType(true, expectBodyColon);
         if (type.Kind == TypeKind.Dictionary && type.TypeArguments.Count != 2)
             throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", opening.Line, opening.Column);
         return type;
     }
 
-    private TypeReference ParseType(bool allowTemplateHint = false)
+    private TypeReference ParseType(bool allowTemplateHint = false, bool expectBodyColon = false)
     {
         var typeToken = tokens.Current;
         var name = tokens.Expect(TokenKind.Identifier).Text;
@@ -417,6 +418,10 @@ public sealed class GdScriptParser : IScriptParser
             while (tokens.TryConsume(TokenKind.Comma));
             tokens.Expect(TokenKind.CloseBracket);
         }
+        // Consume only the outer return type's colon before looking for its end-of-line hint.
+        // Nested type arguments must not consume punctuation owned by the callable header.
+        if (expectBodyColon)
+            tokens.Expect(TokenKind.Colon);
         // Bare Array hints supply the array element; Array[Dictionary] hints below instead
         // supply the nested dictionary schema. Only bracket-prefixed comments are metadata.
         if (allowTemplateHint && name == "Array" && arguments.Count == 0

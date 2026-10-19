@@ -62,3 +62,9 @@ func store(entry: Dictionary[String, Variant], node: Node):
 func hintedItems(callback: Callable) -> int:
 	var items := callback.call() as Array #[DictionaryExpressions.Item]
 	return items.size()
+
+func mixedEntries() -> Array[Dictionary]: #[String, Variant]
+	return MixedEntries
+
+func items() -> Array: #[DictionaryExpressions.Item]
+	return Items

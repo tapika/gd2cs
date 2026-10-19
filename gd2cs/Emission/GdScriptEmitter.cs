@@ -137,11 +137,14 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     if (method.ReturnType.Kind != TypeKind.Void)
                     {
                         output.Append(") -> ");
-                        EmitType(output, method.ReturnType);
+                        EmitType(output, method.ReturnType, true, true);
                     }
                     else
                         output.Append(')');
-                    output.AppendLine(":");
+                    // Return schemas belong after the colon so Godot treats them as comments.
+                    output.Append(':');
+                    EmitTemplateHint(output, method.ReturnType);
+                    output.AppendLine();
                     EmitBody(output, method.Elements, memberIndent + "\t");
                     break;
                 case DestructorDeclaration destructor:

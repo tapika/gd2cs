@@ -26,5 +26,5 @@ func inspect(value: LocalVariables.Element, values: Array[LocalVariables.Element
 func firstValue() -> int:
 	return 1
 
-static func getElements(values: Array[LocalVariables.Element]) -> Array[LocalVariables.Element]:
+static func getElements(values: Array[LocalVariables.Element]) -> Array: #[LocalVariables.Element]
 	return values

@@ -89,4 +89,14 @@ public partial class DictionaryExpressions : RefCounted
 		var items = callback.Call().As<Godot.Collections.Array<DictionaryExpressions.Item>>();
 		return items.Count;
 	}
+
+	public Godot.Collections.Array<Godot.Collections.Dictionary<string, Variant>> mixedEntries()
+	{
+		return MixedEntries;
+	}
+
+	public Godot.Collections.Array<DictionaryExpressions.Item> items()
+	{
+		return Items;
+	}
 }

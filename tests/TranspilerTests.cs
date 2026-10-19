@@ -691,6 +691,23 @@ public sealed class TranspilerTests
         Assert.True(error.Column > lines[line].IndexOf('#') + 1);
     }
 
+    [Theory]
+    [InlineData("[String]", "Invalid dictionary type hint:")]
+    [InlineData("[String,]", "Invalid dictionary type hint:")]
+    [InlineData("[String, Variant] trailing", "Invalid dictionary type hint:")]
+    [InlineData("ordinary comment", "Untyped dictionaries are not supported")]
+    public void RejectReturnHints(string hint, string message)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Collections/DictionaryExpressions.gd"))
+            .Replace("Array[Dictionary]: #[String, Variant]", "Array[Dictionary]: #" + hint);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.StartsWith(message, error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.StartsWith("func mixedEntries", StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.True(error.Column > 0);
+    }
+
     [Fact]
     public static void RejectUntypedDictionaries()
     {
