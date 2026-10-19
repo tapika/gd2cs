@@ -25,7 +25,20 @@ public partial class LocalVariables : RefCounted
 		selected = value;
 		Godot.Collections.Array<LocalVariables.Element> localValues = values;
 		Godot.Collections.Dictionary<string, Godot.Collections.Array<LocalVariables.Element>> localGroups = groups;
+		LocalVariables.Element item = values[0];
+		LocalVariables.Element supplied = LocalVariables.getElements(values)[0];
+		var inferred = firstValue();
 		localValues.Clear();
 		localGroups.Clear();
+	}
+
+	public int firstValue()
+	{
+		return 1;
+	}
+
+	public static Godot.Collections.Array<LocalVariables.Element> getElements(Godot.Collections.Array<LocalVariables.Element> values)
+	{
+		return values;
 	}
 }

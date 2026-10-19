@@ -852,7 +852,6 @@ public sealed class CSharpEmitter : IScriptEmitter
                     output.Append(indent);
                     var useVar = statement.Typing is
                         LocalTyping.Inferred or
-                        LocalTyping.InferredWithExplicitGdType or
                         LocalTyping.Dynamic;
                     if (useVar)
                         output.Append("var");

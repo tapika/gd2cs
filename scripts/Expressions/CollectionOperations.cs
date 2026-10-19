@@ -62,7 +62,7 @@ public partial class CollectionOperations : RefCounted
 		int valueIndex = Values.IndexOf(2);
 
 		var localValues = Values;
-		var selectedValue = CustomValues[0];
+		CustomValue selectedValue = CustomValues[0];
 		var createdValue = new CustomValue();
 		localValues.Add(4);
 		localValues.RemoveAt(0);
@@ -134,9 +134,9 @@ public partial class CollectionOperations : RefCounted
 	{
 		var values = gdDictValues(points);
 		var keys = gdDictKeys(points);
-		var first = values[0];
+		Vector2 first = values[0];
 		var component = first.X;
-		var key = keys[0];
+		int key = keys[0];
 		var count = gdDictKeys(points).Count;
 		var distance = gdDictValues(points)[0].DistanceTo(gdDictValues(points)[1]);
 		foreach (var point in gdDictValues(points))
@@ -144,8 +144,8 @@ public partial class CollectionOperations : RefCounted
 			component = point.Y;
 		}
 		var names = gdDictKeys(Entries);
-		var valueKey = Entries["values"];
-		var keyKey = Entries["keys"];
+		int valueKey = Entries["values"];
+		int keyKey = Entries["keys"];
 		var returned = gdDictValues(getEntries());
 		var custom = (Custom.values() as CustomValue).keys();
 	}

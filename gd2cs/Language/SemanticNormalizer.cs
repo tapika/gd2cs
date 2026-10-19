@@ -420,13 +420,10 @@ internal sealed class SemanticNormalizer
         var typing = statement.Typing;
         if (initializer is DictionaryExpression)
             typing = LocalTyping.Explicit;
+        // An explicit annotation is part of the declaration, not just an inference hint.
+        // When GD needs an inferred C# local annotated, retain that type in both languages.
         if (typing == LocalTyping.Inferred && !CanGdScriptInfer(initializer, scope))
-            typing = type is null ? LocalTyping.Dynamic : LocalTyping.InferredWithExplicitGdType;
-        else if (language == ScriptLanguage.GdScript &&
-                 typing == LocalTyping.Explicit &&
-                 initializer is not null &&
-                 !CanGdScriptInfer(initializer, scope))
-            typing = LocalTyping.InferredWithExplicitGdType;
+            typing = type is null ? LocalTyping.Dynamic : LocalTyping.Explicit;
         return SourceLocations.Copy(statement, statement with
         {
             Type = type,

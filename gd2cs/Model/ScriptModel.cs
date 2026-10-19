@@ -445,7 +445,7 @@ public sealed record ReturnStatement(Expression? Value) : Statement;
 // Represents a function call whose result is intentionally ignored.
 public sealed record ExpressionStatement(Expression Expression) : Statement;
 
-// Normalizes typed or inferred locals whose initializer may be intentionally absent.
+// Retains explicit annotations separately from resolved types, including initialized locals.
 public sealed record LocalVariableStatement(
     string Name,
     TypeReference? Type,
@@ -455,9 +455,11 @@ public sealed record LocalVariableStatement(
 // Separates dynamic assignment from static types expressed explicitly or inferred by GDScript.
 public enum LocalTyping
 {
+    // GD `var name = value`: no static type annotation or inference request.
     Dynamic,
+    // GD `var name := value` / C# `var name = value`: infer the static type.
     Inferred,
-    InferredWithExplicitGdType,
+    // GD `var name : Type` / C# `Type name`: preserve the declared type, with or without an initializer.
     Explicit
 }
 

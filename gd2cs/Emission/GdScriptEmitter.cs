@@ -350,7 +350,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     output.Append(statement.Name);
                     if (statement.Typing == LocalTyping.Inferred)
                         output.Append(" := ");
-                    else if (statement.Typing is LocalTyping.Explicit or LocalTyping.InferredWithExplicitGdType)
+                    else if (statement.Typing == LocalTyping.Explicit)
                     {
                         output.Append(space_colon);
                         EmitType(output, statement.Type ?? throw SourceLocations.Error(statement, "Explicit local requires a type."),
