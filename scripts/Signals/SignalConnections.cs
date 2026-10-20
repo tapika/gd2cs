@@ -13,6 +13,11 @@ public partial class SignalConnections : RefCounted
 	public void wire()
 	{
 		ActionButton.Pressed += onPressed;
+		ActionButton.Connect(BaseButton.SignalName.Pressed, Callable.From(onPressed), (uint)(GodotObject.ConnectFlags.OneShot));
+		ActionButton.Connect(BaseButton.SignalName.Pressed,
+			Callable.From(onPressed), (uint)(GodotObject.ConnectFlags.OneShot | GodotObject.ConnectFlags.Deferred)
+		);
+		ChoiceButton.Connect(OptionButton.SignalName.ItemSelected, Callable.From<long>(onSelected), (uint)(GodotObject.ConnectFlags.Deferred));
 		ActionButton.Toggled += onToggled;
 		ChoiceButton.ItemSelected += onSelected;
 		ChoiceButton.ItemSelected += (long index_) =>

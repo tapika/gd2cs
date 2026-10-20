@@ -9,6 +9,11 @@ var Amount : float
 
 func wire():
 	ActionButton.pressed.connect(onPressed)
+	ActionButton.pressed.connect(onPressed, Object.CONNECT_ONE_SHOT)
+	ActionButton.pressed.connect(
+		onPressed, Object.CONNECT_ONE_SHOT | Object.CONNECT_DEFERRED
+	)
+	ChoiceButton.item_selected.connect(onSelected, Object.CONNECT_DEFERRED)
 	ActionButton.toggled.connect(onToggled)
 	ChoiceButton.item_selected.connect(onSelected)
 	ChoiceButton.item_selected.connect(func (index: int): onSelected(index))

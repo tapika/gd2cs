@@ -1226,14 +1226,25 @@ internal sealed class SemanticNormalizer
             || scope.UserTypes.Contains(constantOwner)
             || constantOwner != reference.DeclaringType && constantOwner != receiverType.Name))
             return false;
-        if (arguments.Arguments.Count != 1)
-            throw SourceLocations.Error(invocation, "Signal connections currently require exactly one callback and no flags.");
+        var isDisconnect = invocation.Target is MemberAccessExpression { Member: "disconnect" or "Disconnect" };
+        if (arguments.Arguments.Count < 1 || arguments.Arguments.Count > (isDisconnect ? 1 : 2))
+            throw SourceLocations.Error(invocation, "Signal connections require a callback and optional flags; disconnect accepts only a callback.");
         var callback = arguments.Arguments[0];
         var handler = NormalizeSignalHandler(callback.Value, reference, scope, invocation);
+        var normalizedArguments = new List<Argument> { callback with { Value = handler } };
+        if (arguments.Arguments.Count == 2)
+        {
+            var flags = arguments.Arguments[1];
+            var value = flags.Value;
+            // Connect's uint cast is a managed API detail, not part of the neutral flag expression.
+            if (language == ScriptLanguage.CSharp && value is ConversionExpression { Type.Name: "uint" } conversion)
+                value = conversion.Value;
+            normalizedArguments.Add(flags with { Value = NormalizeExpression(value, scope) });
+        }
         connection = new SignalConnectionExpression(receiver, reference, arguments with
         {
-            Arguments = new List<Argument> { callback with { Value = handler } }
-        }, language == ScriptLanguage.GdScript && invocation.Target is MemberAccessExpression { Member: "disconnect" });
+            Arguments = normalizedArguments
+        }, isDisconnect);
         return true;
     }
 

@@ -754,7 +754,7 @@ public sealed class CSharpParser : IScriptParser
             return ParseCallableFactory();
         if (tokens.Current.Kind == TokenKind.InterpolatedString)
             return ParseInterpolatedString(tokens.Expect(TokenKind.InterpolatedString).Text);
-        if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text is "float" or "int"
+        if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text is "float" or "int" or "uint"
             && tokens.PeekAt(2).Kind == TokenKind.CloseParenthesis)
             return ParseConversion();
         if (IsLambda())

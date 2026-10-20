@@ -21,6 +21,8 @@ internal sealed class GodotEnumCatalog
         catalog.Add("Control.SizeFlags", "ExpandFill", "Control.SIZE_EXPAND_FILL");
         catalog.Add("HorizontalAlignment", "Center", "HORIZONTAL_ALIGNMENT_CENTER");
         catalog.Add("Error", "Ok", "OK");
+        catalog.Add("GodotObject.ConnectFlags", "OneShot", "Object.CONNECT_ONE_SHOT");
+        catalog.Add("GodotObject.ConnectFlags", "Deferred", "Object.CONNECT_DEFERRED");
         return catalog;
     }
 

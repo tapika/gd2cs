@@ -567,6 +567,23 @@ public sealed class CSharpEmitter : IScriptEmitter
     // Direct subscriptions preserve method-group identity for later -= removal.
     private void EmitSignalConnection(StringBuilder output, SignalConnectionExpression connection, string indent)
     {
+        // Flags have no CLR event equivalent; retain the engine connection API and callback factory.
+        if (connection.Arguments.Arguments.Count > 1)
+        {
+            EmitExpression(output, connection.Target, indent);
+            output.Append(".Connect");
+            var arguments = new List<Argument>
+            {
+                new(new MemberAccessExpression(
+                    new MemberAccessExpression(new ValueExpression(connection.Signal.DeclaringType), "SignalName"),
+                    connection.Signal.Name), false)
+            };
+            arguments.AddRange(connection.Arguments.Arguments.Select((argument, index) => index == 1
+                ? argument with { Value = new ConversionExpression(new TypeReference("uint"), argument.Value) }
+                : argument));
+            EmitArguments(output, connection.Arguments with { Arguments = arguments }, indent);
+            return;
+        }
         EmitExpression(output, connection.Target, indent);
         output.Append('.');
         output.Append(connection.Signal.Name);

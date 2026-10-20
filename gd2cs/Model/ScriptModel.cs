@@ -215,7 +215,8 @@ public sealed record SignalEmissionExpression(string Name, ArgumentList Argument
 // Reflected native signal identity; its declaring class may differ from the concrete receiver type.
 public sealed record GodotSignalReference(string DeclaringType, string Name, List<TypeReference> ParameterTypes);
 
-// Adds/removes a signal handler; callback layout is independent of connect/disconnect and +=/-= syntax.
+// Adds/removes a signal handler; Arguments holds the callback and optional engine connection flags.
+// A callback alone uses C# events; flags require Connect so their behavior survives translation.
 public sealed record SignalConnectionExpression(Expression Target, GodotSignalReference Signal, ArgumentList Arguments, bool IsDisconnect = false) : Expression;
 
 // Identifies a reflected Godot global function without storing either language's spelling.

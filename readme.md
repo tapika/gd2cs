@@ -255,7 +255,7 @@ Nonempty literals can still use type inference, for example `var values := [1, 2
 
 GDScript `button.pressed.connect(onPressed)` / `.disconnect(onPressed)` translate to C# `button.Pressed += onPressed` / `-= onPressed`. Named handlers and inline lambdas are supported; no adapter delegates are generated. For differing integer widths, C# keeps the native signature and adds a conversion local, e.g. `long index_` followed by `var index = (int)(index_);`. Matching parameters stay unchanged. Generated names avoid collisions (`index_2`, etc.). Backtranslation removes these generated locals and restores the original GDScript parameter names/types; ordinary locals and casts remain intact. Unrelated parameter types and conflicting event signatures are rejected. Narrowing casts follow the C# project's overflow-checking policy.
 
-Legacy C# `Connect(..., Callable.From(handler))` is accepted but emitted as event syntax. Runtime `Callable` callback values are not supported for native event connections. Inline lambdas have normal C# delegate-identity limitations; use a named handler when later disconnecting.
+C# `Connect(..., Callable.From(handler))` without flags is emitted as event syntax. Connections with an additional flags argument instead use C# `Connect(..., Callable.From(handler), (uint)(flags))`, preserving options such as `CONNECT_ONE_SHOT` in both directions. Runtime `Callable` callback values are not supported for native event connections. Inline lambdas have normal C# delegate-identity limitations; use a named handler when later disconnecting.
 
 ### C# double
 

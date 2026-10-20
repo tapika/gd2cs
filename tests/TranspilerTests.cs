@@ -283,8 +283,10 @@ public sealed class TranspilerTests
         "Signal handler must return void and match the signal's argument count.")]
     [InlineData(".gd", "ChoiceButton.item_selected.connect(onSelected)", "ChoiceButton.item_selected.connect(missingHandler)",
         "Signal connection requires an unambiguous named void handler in this class or an inline lambda.")]
-    [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onPressed, 1)",
-        "Signal connections currently require exactly one callback and no flags.")]
+    [InlineData(".gd", "ActionButton.pressed.connect(onPressed)", "ActionButton.pressed.connect(onPressed, 1, 2)",
+        "Signal connections require a callback and optional flags")]
+    [InlineData(".gd", "ActionButton.pressed.disconnect(onPressed)", "ActionButton.pressed.disconnect(onPressed, 1)",
+        "Signal connections require a callback and optional flags")]
     [InlineData(".cs", "ActionButton.Pressed += onPressed", "ActionButton.Pressed += onSelected",
         "Signal handler must return void and match the signal's argument count.")]
     [InlineData(".cs", "ChoiceButton.ItemSelected += onSelected", "ChoiceButton.ItemSelected += missingHandler",
