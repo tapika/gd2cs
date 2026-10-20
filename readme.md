@@ -257,6 +257,16 @@ GDScript `button.pressed.connect(onPressed)` / `.disconnect(onPressed)` translat
 
 C# `Connect(..., Callable.From(handler))` without flags is emitted as event syntax. Connections with an additional flags argument instead use C# `Connect(..., Callable.From(handler), (uint)(flags))`, preserving options such as `CONNECT_ONE_SHOT` in both directions. Runtime `Callable` callback values are not supported for native event connections. Inline lambdas have normal C# delegate-identity limitations; use a named handler when later disconnecting.
 
+`Callable.bind()` is currently unsupported. For a signal callback, use an inline lambda instead of `refresh.bind(target)`:
+
+```gdscript
+target.get_tree().process_frame.connect(
+    func(): refresh(target), Object.CONNECT_ONE_SHOT
+)
+```
+
+The lambda captures `target` and passes it to `refresh` when the signal fires. Unlike `bind()`, which stores argument values when binding, a lambda evaluates its argument expressions when invoked; avoid side-effecting expressions if equivalent behavior is required.
+
 ### C# double
 
 Native event signatures are the exception: gd2cs generates a `double` parameter and a leading float conversion (`var value = (float)(value_);`) when the event requires double but the script handler uses float. Backtranslation removes this C#-only conversion. Named handlers and inline lambdas use the same mechanism as int/long event parameters, preserving disconnect support without delegate adapters.
