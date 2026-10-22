@@ -741,7 +741,7 @@ public sealed class CSharpParser : IScriptParser
             if (tokens.Current.Kind != TokenKind.OpenParenthesis)
                 return expression;
             var arguments = ParseArguments();
-            expression = SourceLocations.Record(new InvocationExpression(NormalizeCallableTarget(expression, arguments), arguments), opening);
+            expression = SourceLocations.Record(new InvocationExpression(expression, arguments), opening);
         }
     }
 
@@ -969,25 +969,6 @@ public sealed class CSharpParser : IScriptParser
         parts.Add(new InterpolationText(text.ToString()));
         text.Clear();
     }
-
-    // Math functions use one canonical GDScript name while all other callable targets stay structural.
-    private static Expression NormalizeCallableTarget(Expression expression, ArgumentList arguments)
-    {
-        if (expression is not (ValueExpression or MemberAccessExpression { Target: ValueExpression }))
-            return expression;
-        var name = ExpressionName(expression);
-        var normalized = MathFunctionNames.ToGdScript(name, arguments.Arguments);
-        return normalized == name ? expression : new ValueExpression(normalized);
-    }
-
-    // Flattens a target only for lookup in the centralized global-function mapping.
-    private static string ExpressionName(Expression expression) => expression switch
-    {
-        ValueExpression value => value.Text,
-        CurrentInstanceExpression => "this",
-        MemberAccessExpression member => ExpressionName(member.Target) + "." + member.Member,
-        _ => throw new NotSupportedException("Unsupported language dialect.")
-    };
 
     // Records each line transition independently, including the closing parenthesis.
     private ArgumentList ParseArguments()

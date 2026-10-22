@@ -5,6 +5,8 @@ const FullTurn := TAU
 const HalfTurn := PI
 const Infinity := INF
 const Invalid := NAN
+const LowerScale := 0.5
+const UpperScale := 2.0
 
 var PositiveLimit := INF
 var NegativeLimit := -INF
@@ -56,6 +58,23 @@ func constants() -> float:
 	var turn := TAU
 	var edge := -INF
 	return turn + PI + edge
+
+func overloads(value: float, first: int, second: int) -> float:
+	var minimum := minf(value, LowerScale)
+	var maximum := maxf(minimum, UpperScale)
+	var limited := clampf(value, minimum, maximum)
+	var inferred := sqrt(limited)
+	var nested := clampf(minf(inferred, maximum), LowerScale, UpperScale)
+	var offset := first + second
+	var floor := mini(offset, second)
+	var ceiling := maxi(first, second)
+	var integer := clampi(first, floor, ceiling)
+	var mixed := maxf(integer, value)
+	var promoted := first + value
+	var promotedLimit := clampf(minf(promoted, value), minimum, maximum)
+	var forced := minf(float(first), second)
+	var truncated := maxi(int(value), second)
+	return nested + mixed + promotedLimit + forced + truncated
 
 func shadow(TAU: float) -> float:
 	var PI := TAU

@@ -529,6 +529,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 });
                 EmitArguments(output, clamp.Arguments, indent);
                 break;
+            case MathFunctionExpression math:
+                output.Append(math.Name);
+                EmitArguments(output, math.Arguments, indent);
+                break;
             case CustomSortExpression sort:
                 EmitExpression(output, sort.Target, indent);
                 output.Append(".sort_custom");

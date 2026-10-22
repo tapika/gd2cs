@@ -356,6 +356,10 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append(MathFunctionNames.ToCSharp("clamp"));
                 EmitArguments(output, clamp.Arguments, indent);
                 break;
+            case MathFunctionExpression math:
+                output.Append(MathFunctionNames.ToCSharp(math.Name));
+                EmitArguments(output, math.Arguments, indent);
+                break;
             case CustomSortExpression sort:
                 requiresCustomSort = true;
                 output.Append("gdSortCustom");
@@ -617,7 +621,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     {
         if (target is ValueExpression value)
         {
-            output.Append(MathFunctionNames.ToCSharp(value.Text));
+            output.Append(value.Text);
             return;
         }
         EmitExpression(output, target, indent);

@@ -710,6 +710,7 @@ internal sealed class SemanticNormalizer
             },
             DictionaryExpression dictionary => NormalizeDictionary(dictionary, scope),
             InvocationExpression invocation => SourceLocations.Copy(invocation, NormalizeInvocation(invocation, scope)),
+            MathFunctionExpression math => math with { Arguments = NormalizeArguments(math.Arguments, scope) },
             SignalEmissionExpression signal => signal with { Arguments = NormalizeArguments(signal.Arguments, scope) },
             SignalConnectionExpression connection => connection with
             {
@@ -811,6 +812,10 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
+        // Preserve raw C# targets until scope binding; parser-time spelling guesses cannot
+        // distinguish float variables from integers or respect shadowed Mathf/user functions.
+        if (TryNormalizeMath(invocation, scope, out var math))
+            return math;
         // Bind the built-in conversion or its reserved helper, never a shadowing declaration.
         var stringifyName = language == ScriptLanguage.GdScript ? "str" : "gdStr";
         if (invocation.Target is ValueExpression stringify && stringify.Text == stringifyName
@@ -835,11 +840,6 @@ internal sealed class SemanticNormalizer
         else
             target = NormalizeExpression(invocation.Target, scope);
         var arguments = NormalizeArguments(invocation.Arguments, scope);
-        // Bind only global math calls; a same-named script method or local is not a built-in.
-        if (target is ValueExpression { Text: "clamp" or "clampf" or "clampi" } clamp
-            && !scope.IsUserMethod(clamp.Text) && scope.Resolve(clamp.Text) is null
-            && !scope.UserTypes.Contains(clamp.Text))
-            return NormalizeClamp(clamp.Text, arguments, invocation, scope);
         // Packed constructors are conversions, not mutable collection construction.
         // Require a known matching element type; never infer it from a name or an API destination.
         if (language == ScriptLanguage.GdScript && target is ValueExpression packed
@@ -1105,6 +1105,62 @@ internal sealed class SemanticNormalizer
         {
             Arguments = new List<Argument> { arguments.Arguments[0] with { Value = predicate } }
         });
+    }
+
+    // Resolve math overloads after recursively binding arguments, so inferred locals and
+    // nested Min/Max calls carry their numeric result into later Clamp calls.
+    private bool TryNormalizeMath(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = invocation;
+        string name;
+        if (language == ScriptLanguage.CSharp
+            && invocation.Target is MemberAccessExpression { Target: ValueExpression { Text: "Mathf" } } member
+            && scope.Resolve("Mathf") is null && !scope.UserTypes.Contains("Mathf"))
+        {
+            name = MathFunctionNames.ToGdScript("Mathf." + member.Member);
+        }
+        else if (language == ScriptLanguage.GdScript && invocation.Target is ValueExpression value
+            && scope.Resolve(value.Text) is null && !scope.IsUserMethod(value.Text)
+            && !scope.UserTypes.Contains(value.Text))
+            name = value.Text;
+        else
+            return false;
+        if (!MathFunctionNames.IsBuiltIn(name))
+            return false;
+        var arguments = NormalizeArguments(invocation.Arguments, scope);
+        if (name is "clamp" or "clampf" or "clampi")
+        {
+            result = NormalizeClamp(name, arguments, invocation, scope);
+            return true;
+        }
+        var type = MathFunctionNames.ResultType(name);
+        if (name is "minf" or "mini" or "maxf" or "maxi")
+        {
+            if (arguments.Arguments.Count != 2)
+                throw SourceLocations.Error(invocation, "Min/Max require two numeric arguments.");
+            var types = arguments.Arguments.Select(argument => ResolveType(argument.Value, scope)).ToList();
+            var hasFloat = types.Any(type => type?.Kind is TypeKind.Float32 or TypeKind.Float64);
+            var allIntegers = types.All(type => type?.Kind is TypeKind.Int32 or TypeKind.Int64);
+            var integer = language == ScriptLanguage.GdScript ? name.EndsWith('i') : allIntegers;
+            if (language == ScriptLanguage.CSharp && !hasFloat && !allIntegers)
+                throw SourceLocations.Error(invocation, "Cannot resolve Mathf.Min/Max numeric overload; declare argument types or use explicit casts.");
+            type = new TypeReference(integer
+                ? types.Any(type => type?.Kind == TypeKind.Int64) ? "int64" : "int"
+                : "float");
+            name = name[..^1] + (integer ? "i" : "f");
+            // Typed GD functions coerce inputs; make those conversions explicit where C#
+            // would otherwise select another overload (or reject float-to-int arguments).
+            arguments = arguments with
+            {
+                Arguments = arguments.Arguments.Select((argument, index) =>
+                    (!integer && !hasFloat && index == 0
+                        || integer && types[index]?.Kind is TypeKind.Float32 or TypeKind.Float64)
+                    ? argument with { Value = new ConversionExpression(type, argument.Value) }
+                    : argument).ToList()
+            };
+        }
+        result = new MathFunctionExpression(name, arguments, type);
+        return true;
     }
 
     /* Clamp's typed GDScript variants and C# overloads share one model operation. Resolve
@@ -1600,11 +1656,12 @@ internal sealed class SemanticNormalizer
         UnaryExpression { Operator: "not" } => new TypeReference("bool"),
         UnaryExpression unary => ResolveType(unary.Operand, scope),
         BinaryExpression { Operator: "and" or "or" or "==" or "!=" or "<" or "<=" or ">" or ">=" } => new TypeReference("bool"),
-        BinaryExpression binary => ResolveType(binary.Left, scope) ?? ResolveType(binary.Right, scope),
+        BinaryExpression binary => ResolveBinaryType(binary, scope),
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
         ClampExpression clamp => clamp.Type,
+        MathFunctionExpression math => math.Type,
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),
         CallableValidityExpression => new TypeReference("bool"),
@@ -1640,6 +1697,23 @@ internal sealed class SemanticNormalizer
         ParenthesizedExpression parenthesized => ResolveType(parenthesized.Expression, scope),
         _ => null
     };
+
+    // Numeric promotion must not depend on operand order (int + float is float), while
+    // vector/scalar operations retain the existing concrete receiver type.
+    private static TypeReference? ResolveBinaryType(BinaryExpression binary, BindingScope scope)
+    {
+        var left = ResolveType(binary.Left, scope);
+        var right = ResolveType(binary.Right, scope);
+        if (left?.Kind is TypeKind.Int32 or TypeKind.Int64 or TypeKind.Float32 or TypeKind.Float64
+            && right?.Kind is TypeKind.Int32 or TypeKind.Int64 or TypeKind.Float32 or TypeKind.Float64)
+        {
+            var kinds = new[] { left.Kind, right.Kind };
+            return new TypeReference(kinds.Contains(TypeKind.Float64) ? "float64"
+                : kinds.Contains(TypeKind.Float32) ? "float"
+                : kinds.Contains(TypeKind.Int64) ? "int64" : "int");
+        }
+        return left ?? right;
+    }
 
     // Resolve collection elements from their schema and built-in components from reflected indexers.
     private static TypeReference? ResolveIndexType(IndexExpression index, BindingScope scope)

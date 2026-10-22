@@ -130,6 +130,9 @@ public sealed record CallableInvocationExpression(
 // Clamps a numeric value independently of dialect spelling; null retains an unresolved generic clamp.
 public sealed record ClampExpression(ArgumentList Arguments, TypeReference? Type) : Expression;
 
+// Binds a built-in math operation and its result type; typed GD aliases share C# overload identity.
+public sealed record MathFunctionExpression(string Name, ArgumentList Arguments, TypeReference Type) : Expression;
+
 // Gives a named void handler the signature required by C# Callable.From overload resolution.
 public sealed record CallableMethodGroupExpression(Expression Target, List<TypeReference> ParameterTypes) : Expression;
 

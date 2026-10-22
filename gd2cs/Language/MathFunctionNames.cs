@@ -84,20 +84,16 @@ internal static class MathFunctionNames
         return mathfToGd.TryGetValue(methodName, out var mapped) ? mapped : name;
     }
 
-    // Resolves Mathf overloads whose GDScript names encode the argument value type.
-    public static string ToGdScript(string name, List<Argument> arguments)
-    {
-        var mapped = ToGdScript(name);
-        if (mapped is "maxf" or "minf" && arguments.All(argument => IsIntegerExpression(argument.Value)))
-            return mapped == "maxf" ? "maxi" : "mini";
-        return mapped;
-    }
+    // Recognition is separate from overload selection, which requires semantic scope information.
+    public static bool IsBuiltIn(string name) => gdToMathf.ContainsKey(name)
+        || name is "clampf" or "clampi";
 
-    private static bool IsIntegerExpression(Expression expression) => expression switch
+    // Fixed-signature functions expose their result to inferred locals and enclosing calls.
+    // Min/Max and Clamp are handled separately because their result depends on the overload.
+    public static TypeReference ResultType(string name) => new(name switch
     {
-        ValueExpression value => !value.Text.Contains('.') && !value.Text.Contains('f'),
-        InvocationExpression { Target: ValueExpression { Text: "ceili" or "floori" or "roundi" } } => true,
-        BinaryExpression binary => IsIntegerExpression(binary.Left) && IsIntegerExpression(binary.Right),
-        _ => false
-    };
+        "ceili" or "floori" or "roundi" or "nearest_po2" or "step_decimals" => "int",
+        "is_equal_approx" or "is_finite" or "is_inf" or "is_nan" or "is_zero_approx" => "bool",
+        _ => "float"
+    });
 }

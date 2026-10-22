@@ -8,6 +8,8 @@ public partial class MathFunctions : RefCounted
 	public const float HalfTurn = Mathf.Pi;
 	public const float Infinity = Mathf.Inf;
 	public const float Invalid = Mathf.NaN;
+	public const float LowerScale = 0.5f;
+	public const float UpperScale = 2.0f;
 
 	public float PositiveLimit = Mathf.Inf;
 	public float NegativeLimit = -Mathf.Inf;
@@ -64,6 +66,25 @@ public partial class MathFunctions : RefCounted
 		var turn = Mathf.Tau;
 		var edge = -Mathf.Inf;
 		return turn + Mathf.Pi + edge;
+	}
+
+	public float overloads(float value, int first, int second)
+	{
+		var minimum = Mathf.Min(value, LowerScale);
+		var maximum = Mathf.Max(minimum, UpperScale);
+		var limited = Mathf.Clamp(value, minimum, maximum);
+		var inferred = Mathf.Sqrt(limited);
+		var nested = Mathf.Clamp(Mathf.Min(inferred, maximum), LowerScale, UpperScale);
+		var offset = first + second;
+		var floor = Mathf.Min(offset, second);
+		var ceiling = Mathf.Max(first, second);
+		var integer = Mathf.Clamp(first, floor, ceiling);
+		var mixed = Mathf.Max(integer, value);
+		var promoted = first + value;
+		var promotedLimit = Mathf.Clamp(Mathf.Min(promoted, value), minimum, maximum);
+		var forced = Mathf.Min((float)(first), second);
+		var truncated = Mathf.Max((int)(value), second);
+		return nested + mixed + promotedLimit + forced + truncated;
 	}
 
 	public float shadow(float TAU)

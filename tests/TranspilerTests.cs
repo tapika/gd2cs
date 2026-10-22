@@ -132,6 +132,22 @@ public sealed class TranspilerTests
     }
 
     [Theory]
+    [InlineData(".gd", "minf(value, 1.0)", "minf(value)", "Min/Max require two numeric arguments")]
+    [InlineData(".cs", "Mathf.Min(value, 1.0f)", "Mathf.Min(value)", "Min/Max require two numeric arguments")]
+    [InlineData(".cs", "Mathf.Min(value, 1.0f)", "Mathf.Min(missing, missing)", "Cannot resolve Mathf.Min/Max numeric overload")]
+    public void RejectMathOverload(string extension, string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/MathFunctions" + extension)).Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.StartsWith(message, error.Message);
+        var lines = source.ReplaceLineEndings("\n").Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement, StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf(replacement, StringComparison.Ordinal) + 1, error.Column);
+    }
+
+    [Theory]
     [InlineData(".gd", "clampf(value, 0, 1)", "clampf(value, 0)")]
     [InlineData(".cs", "Mathf.Clamp(value, 0, 1)", "Mathf.Clamp(value, 0)")]
     public void RejectClampArity(string extension, string original, string replacement)
