@@ -147,6 +147,10 @@ var count : int:
 
 Read-only, write-only, static and nested properties are supported. Custom setter parameter names are preserved using a reversible C# local alias of `value`. Use explicit blocks: auto-properties, property initializers and GDScript's implicit self-referencing backing storage are not supported.
 
+### C# visibility
+
+GDScript has no C# access modifiers. Classes and members translated by gd2cs must be `public`; change `private`, `protected`, `internal`, or implicitly private declarations to `public`. Property accessors must also be public: remove a restricted accessor modifier such as `private set`. gd2cs's generated private helper functions are exempt.
+
 
 ### Return types
 

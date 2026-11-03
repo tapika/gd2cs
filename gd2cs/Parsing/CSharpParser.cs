@@ -6,6 +6,12 @@ namespace gd2cs.Parsing;
 
 public sealed class CSharpParser : IScriptParser
 {
+    // These names are reserved for generated C#-only helpers.
+    private static readonly HashSet<string> generatedHelperNames = new(StringComparer.Ordinal)
+    {
+        "gdCallableIsValid", "gdStr", "gdSortCustom", "gdArray", "gdDictKeys", "gdDictValues"
+    };
+
     private TokenReader tokens = null!;
     private int groupingDepth;
 
@@ -41,7 +47,7 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(TokenKind.CloseBracket);
             EndOfLine();
         }
-        tokens.Expect(TokenKind.Identifier, "public");
+        ExpectPublic();
         tokens.Expect(TokenKind.Identifier, "partial");
         tokens.Expect(TokenKind.Identifier, "class");
         var name = tokens.Expect(TokenKind.Identifier).Text;
@@ -54,12 +60,12 @@ public sealed class CSharpParser : IScriptParser
         var elements = new List<SyntaxElement>();
         while (tokens.Current.Kind != TokenKind.CloseBrace)
         {
-            if (tokens.Current.Kind == TokenKind.NewLine && tokens.Peek.Text == "private")
+            if (tokens.Current.Kind == TokenKind.NewLine && IsGeneratedHelper(1))
             {
                 tokens.TryConsume(TokenKind.NewLine);
                 continue;
             }
-            if (tokens.Current.Text == "private")
+            if (IsGeneratedHelper())
             {
                 ParseGeneratedHelper();
                 continue;
@@ -86,7 +92,7 @@ public sealed class CSharpParser : IScriptParser
                 continue;
             }
 
-            tokens.TryConsume(TokenKind.Identifier, "public");
+            ExpectPublic();
             var isStatic = tokens.TryConsume(TokenKind.Identifier, "static");
             var isOverride = tokens.TryConsume(TokenKind.Identifier, "override");
             var isReadonly = isStatic && tokens.TryConsume(TokenKind.Identifier, "readonly");
@@ -133,6 +139,25 @@ public sealed class CSharpParser : IScriptParser
     private static NestedClassDeclaration ToNested(ClassDeclaration declaration) =>
         new(declaration.Name, declaration.BaseType, declaration.Elements);
 
+    // C# defaults class members to private; GD cannot preserve restricted visibility.
+    private void ExpectPublic()
+    {
+        if (!tokens.TryConsume(TokenKind.Identifier, "public"))
+            throw new ParseException("Non-public C# declarations are not supported; change the access modifier to public.",
+                tokens.Current.Line, tokens.Current.Column);
+    }
+
+    // Restrict the reserved names to private static methods, not fields or instance methods.
+    private bool IsGeneratedHelper(int offset = 0)
+    {
+        if (tokens.PeekAt(offset).Text != "private" || tokens.PeekAt(offset + 1).Text != "static")
+            return false;
+        offset += 2;
+        if (!LookAheadType(ref offset) || !generatedHelperNames.Contains(tokens.PeekAt(offset).Text))
+            return false;
+        return tokens.PeekAt(offset + 1).Kind is TokenKind.OpenParenthesis or TokenKind.LessThan;
+    }
+
     // C# setter parameters are implicit. Fold only our leading alias when value is otherwise unused.
     private PropertyDeclaration ParseProperty(TypeReference type, string name, bool isStatic)
     {
@@ -145,6 +170,9 @@ public sealed class CSharpParser : IScriptParser
         {
             if (ParseTrivia(elements))
                 continue;
+            if (tokens.Current.Text is "private" or "protected" or "internal")
+                throw new ParseException("Non-public C# property accessors are not supported; remove the access modifier so the accessor is public.",
+                    tokens.Current.Line, tokens.Current.Column);
             var accessor = tokens.Expect(TokenKind.Identifier);
             if (accessor.Text is not ("get" or "set") || !seen.Add(accessor.Text))
                 throw new ParseException("Expected one get and/or set accessor.", accessor.Line, accessor.Column);
@@ -175,7 +203,7 @@ public sealed class CSharpParser : IScriptParser
         tokens.Expect(TokenKind.Identifier, "Signal");
         tokens.Expect(TokenKind.CloseBracket);
         EndOfLine(optional: true);
-        tokens.Expect(TokenKind.Identifier, "public");
+        ExpectPublic();
         tokens.Expect(TokenKind.Identifier, "delegate");
         tokens.Expect(TokenKind.Identifier, "void");
         var name = tokens.Expect(TokenKind.Identifier);
@@ -495,47 +523,15 @@ public sealed class CSharpParser : IScriptParser
         return type;
     }
 
-    // Recognize reserved generated signatures, then discard their C#-only implementation.
+    // Reserved helper implementations are C#-only; their names, not signatures, identify them.
     private void ParseGeneratedHelper()
     {
-        tokens.Expect(TokenKind.Identifier, "private");
-        tokens.Expect(TokenKind.Identifier, "static");
-        if (tokens.TryConsume(TokenKind.Identifier, "bool"))
+        while (tokens.Current.Kind != TokenKind.OpenBrace)
         {
-            tokens.Expect(TokenKind.Identifier, "gdCallableIsValid");
-            tokens.Expect(TokenKind.OpenParenthesis);
-            tokens.Expect(TokenKind.Identifier, "Callable");
-            tokens.Expect(TokenKind.Identifier, "callback");
-            tokens.Expect(TokenKind.CloseParenthesis);
+            if (tokens.Current.Kind is TokenKind.EndOfFile or TokenKind.Semicolon)
+                throw new ParseException("Expected a generated helper body", tokens.Current.Line, tokens.Current.Column);
+            tokens.Expect(tokens.Current.Kind);
         }
-        else if (tokens.TryConsume(TokenKind.Identifier, "string"))
-        {
-            tokens.Expect(TokenKind.Identifier, "gdStr");
-            tokens.Expect(TokenKind.OpenParenthesis);
-            tokens.Expect(TokenKind.Identifier, "params");
-            tokens.Expect(TokenKind.Identifier, "Variant");
-            tokens.Expect(TokenKind.OpenBracket);
-            tokens.Expect(TokenKind.CloseBracket);
-            tokens.Expect(TokenKind.Identifier, "values");
-            tokens.Expect(TokenKind.CloseParenthesis);
-        }
-        else if (tokens.TryConsume(TokenKind.Identifier, "void"))
-        {
-            tokens.Expect(TokenKind.Identifier, "gdSortCustom");
-            tokens.Expect(TokenKind.LessThan);
-            tokens.Expect(TokenKind.Identifier, "T");
-            tokens.Expect(TokenKind.GreaterThan);
-            tokens.Expect(TokenKind.OpenParenthesis);
-            _ = ParseType();
-            tokens.Expect(TokenKind.Identifier, "values");
-            tokens.Expect(TokenKind.Comma);
-            _ = ParseType();
-            tokens.Expect(TokenKind.Identifier, "before");
-            tokens.Expect(TokenKind.CloseParenthesis);
-        }
-        else
-            ParseArrayHelperSignature();
-        EndOfLine();
         tokens.Expect(TokenKind.OpenBrace);
         var depth = 1;
         while (depth > 0)
@@ -549,46 +545,6 @@ public sealed class CSharpParser : IScriptParser
             tokens.Expect(tokens.Current.Kind);
         }
         EndOfLine(optional: true);
-    }
-
-    // Array construction and dictionary extraction helpers differ only in their reserved signatures.
-    private void ParseArrayHelperSignature()
-    {
-        _ = ParseType();
-        var helper = tokens.Expect(TokenKind.Identifier);
-        if (helper.Text != "gdArray" && helper.Text is not ("gdDictKeys" or "gdDictValues"))
-            throw new ParseException("Unsupported generated array helper.", helper.Line, helper.Column);
-        tokens.Expect(TokenKind.LessThan);
-        ParseVariantParameter(helper.Text == "gdArray" ? "T" : "TKey");
-        if (helper.Text != "gdArray")
-        {
-            tokens.Expect(TokenKind.Comma);
-            ParseVariantParameter("TValue");
-        }
-        tokens.Expect(TokenKind.GreaterThan);
-        tokens.Expect(TokenKind.OpenParenthesis);
-        if (helper.Text != "gdArray")
-        {
-            _ = ParseType();
-            tokens.Expect(TokenKind.Identifier, "dictionary");
-        }
-        else
-        {
-            tokens.Expect(TokenKind.Identifier, "params");
-            tokens.Expect(TokenKind.Identifier, "T");
-            tokens.Expect(TokenKind.OpenBracket);
-            tokens.Expect(TokenKind.CloseBracket);
-            tokens.Expect(TokenKind.Identifier, "values");
-        }
-        tokens.Expect(TokenKind.CloseParenthesis);
-    }
-
-    private void ParseVariantParameter(string name)
-    {
-        tokens.Expect(TokenKind.OpenBracket);
-        tokens.Expect(TokenKind.Identifier, "MustBeVariant");
-        tokens.Expect(TokenKind.CloseBracket);
-        tokens.Expect(TokenKind.Identifier, name);
     }
 
     private ArrayExpression ParseArray()
