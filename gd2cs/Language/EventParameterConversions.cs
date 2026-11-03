@@ -51,6 +51,21 @@ internal static class EventParameterConversions
                 body.RemoveAt(0);
                 folded = true;
             }
+            if (fold && parameter.Type.Kind == TypeKind.Float64 && nativeTypes[index].Kind == TypeKind.Float64)
+            {
+                // Only verified native event parameters get this guidance; ordinary doubles
+                // remain rejected by the general validation pass.
+                var occupied = Names(elements);
+                foreach (var other in result)
+                    occupied.Add(other.Name);
+                var incoming = parameter.Name + Suffix;
+                for (var suffix = 2; occupied.Contains(incoming); suffix++)
+                    incoming = parameter.Name + Suffix + suffix;
+                throw SourceLocations.Error(parameter.Type,
+                    $"C# event double parameter '{parameter.Name}' must be converted to float immediately. "
+                    + $"Rename it to '{incoming}' and start the body with 'var {parameter.Name} = (float)({incoming});'. "
+                    + $"Use '{parameter.Name}' afterwards.");
+            }
             result[index] = parameter with
             {
                 EventType = SameType(parameter.Type, nativeTypes[index]) ? null : nativeTypes[index]

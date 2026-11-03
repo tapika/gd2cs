@@ -325,6 +325,25 @@ public sealed class TranspilerTests
         Assert.Equal(lines[line].Length - lines[line].TrimStart().Length + 1, error.Column);
     }
 
+    [Theory]
+    [InlineData("public void onValueChanged(double value_)\n\t{\n\t\tvar value = (float)(value_);",
+        "public void onValueChanged(double value)\n\t{")]
+    [InlineData("ValueControl.ValueChanged += (double value_) =>\n\t\t{\n\t\t\tvar value = (float)(value_);",
+        "ValueControl.ValueChanged += (double value) =>\n\t\t{")]
+    public void RejectUnconvertedEventDouble(string original, string replacement)
+    {
+        var cs = File.ReadAllText(Fixture("Signals/SignalConnections.cs")).ReplaceLineEndings("\n");
+        Assert.Contains(original, cs);
+        var source = cs.Replace(original, replacement);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
+        Assert.Contains("event double parameter 'value' must be converted to float immediately", error.Message);
+        Assert.Contains("var value = (float)(value_);", error.Message);
+        var lines = source.Split('\n');
+        var line = Array.FindIndex(lines, text => text.Contains(replacement.Split('\n')[0], StringComparison.Ordinal));
+        Assert.Equal(line + 1, error.Line);
+        Assert.Equal(lines[line].IndexOf("double", StringComparison.Ordinal) + 1, error.Column);
+    }
+
     [Fact]
     public void EventWidths()
     {
@@ -831,15 +850,6 @@ public sealed class TranspilerTests
         var line = Array.FindIndex(lines, text => text.Contains("evaluate(" + type, StringComparison.Ordinal));
         Assert.Equal(line + 1, error.Line);
         Assert.Equal(lines[line].IndexOf(type, StringComparison.Ordinal) + 1, error.Column);
-    }
-
-    [Fact]
-    public void RejectUnconvertedEventDouble()
-    {
-        var source = File.ReadAllText(Fixture("Signals/SignalConnections.cs"))
-            .Replace("var value = (float)(value_);", "");
-        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.CSharp));
-        Assert.Equal("C# double is not supported; use float instead.", error.Message);
     }
 
     [Fact]
