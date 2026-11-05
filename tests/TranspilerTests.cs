@@ -362,6 +362,43 @@ public sealed class TranspilerTests
         Assert.Equal(gd, transpiler.Transpile(legacy, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
     }
 
+    // These non-canonical forms cannot be fixture pairs: emission normalizes lambdas,
+    // parameterless Any(), and Sum() to the typed forms in ArrayQueries.
+    [Fact]
+    public void InferredQueryParameters()
+    {
+        var transpiler = new Transpiler();
+        var cs = File.ReadAllText(Fixture("Expressions/Collections/ArrayQueries.cs"));
+        var gd = File.ReadAllText(Fixture("Expressions/Collections/ArrayQueries.gd"));
+        var inferred = cs.Replace("(Item item) =>", "item =>")
+            .Replace("(int value) =>", "value =>")
+            .Replace("(int accumulator, int value) =>", "(accumulator, value) =>")
+            .Replace("Values.Count != 0", "Values.Any()")
+            .Replace("Values.Sum((int item) => item)", "Values.Sum()");
+        Assert.Equal(gd, transpiler.Transpile(inferred, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
+        var inferredGd = gd.Replace("func (value: int) -> bool:", "func (value):")
+            .Replace("func (value: int) -> int:", "func (value):")
+            .Replace("func (gd2csSum2: int, item: Item) -> int:", "func (gd2csSum2, item):");
+        Assert.Equal(cs, transpiler.Transpile(inferredGd, Language.ScriptLanguage.GdScript, Language.ScriptLanguage.CSharp));
+    }
+
+    [Theory]
+    [InlineData("Values.Where((int value) => value > 1)", "Values.Where((int value) => value + 1)", "predicate must return bool")]
+    [InlineData("Values.Aggregate(1, (int accumulator, int value) => accumulator * value)", "Values.Aggregate((int accumulator, int value) => accumulator * value)", "require an explicit seed")]
+    [InlineData("Values.Sum((int item) => item)", "Values.Sum(sumLengths)", "require an inline lambda")]
+    [InlineData("Values.Sum((int item) => item)", "Values.First()", "Unsupported LINQ operation 'First'")]
+    [InlineData("selected.Select((int value) => value * 2)", "selected.Select((int value, int index) => value * 2)", "matching parameters")]
+    [InlineData("var mapped = new Godot.Collections.Array<int>", "Godot.Collections.Array<int> mapped = new Godot.Collections.Array<int>", "untyped GDScript Array")]
+    public void RejectArrayQuery(string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Collections/ArrayQueries.cs"));
+        Assert.Contains(original, source);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source.Replace(original, replacement), Language.ScriptLanguage.CSharp));
+        Assert.Contains(message, error.Message);
+        Assert.True(error.Line > 1);
+        Assert.True(error.Column > 0);
+    }
+
     [Theory]
     [InlineData(".gd", "changed.emit()", "changed.emit(1)", "Signal 'changed' requires 0 argument(s).")]
     [InlineData(".cs", "EmitSignal(SignalName.changed)", "EmitSignal(SignalName.changed, 1)", "Signal 'changed' requires 0 argument(s).")]
@@ -899,7 +936,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(27, r.Count);
+        Assert.Equal(28, r.Count);
         return r;
     }
 

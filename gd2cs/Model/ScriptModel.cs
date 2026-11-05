@@ -278,6 +278,15 @@ public sealed record CollectionOperationExpression(
 // Arguments retains callback/closing-delimiter layout; ElementType binds both predicate parameters.
 public sealed record CustomSortExpression(Expression Target, TypeReference ElementType, ArgumentList Arguments) : Expression;
 
+// A typed array query; callback arguments stay in source order while dialects choose their spelling.
+public sealed record ArrayQueryExpression(Expression Target, ArrayQueryOperation Operation,
+    LambdaExpression Callback, Expression? Seed, TypeReference ResultType,
+    bool CallbackStartsOnNewLine = false, bool SeedStartsOnNewLine = false,
+    bool ClosingParenthesisStartsOnNewLine = false) : Expression;
+
+// Count carries a predicate; parameterless Count remains the ordinary array length operation.
+public enum ArrayQueryOperation { Select, Where, Any, All, Aggregate, Sum, Count }
+
 // Distinguishes operations whose source spelling depends on both language and collection kind.
 public enum CollectionOperation
 {

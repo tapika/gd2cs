@@ -703,6 +703,15 @@ public sealed class CSharpParser : IScriptParser
 
     private Expression ParsePrimaryExpression()
     {
+        // LINQ permits a single inferred parameter without surrounding parentheses.
+        if (tokens.Current.Kind == TokenKind.Identifier && tokens.Peek.Kind == TokenKind.LambdaArrow)
+        {
+            var name = tokens.Expect(TokenKind.Identifier).Text;
+            tokens.Expect(TokenKind.LambdaArrow);
+            var body = ParseExpression();
+            return new LambdaExpression(new ParameterList([new ParameterDeclaration(name, new TypeReference(""))], false),
+                new TypeReference("void"), [new ExpressionStatement(body)], true);
+        }
         // Array helpers are expressions too, allowing chained calls such as gdArray(...).Contains(...).
         if (tokens.Current.Text == "gdArray" && tokens.Peek.Kind == TokenKind.OpenParenthesis)
             return ParseArray();
@@ -728,7 +737,7 @@ public sealed class CSharpParser : IScriptParser
         }
         if (tokens.Current.Text == "new")
         {
-            tokens.Expect(TokenKind.Identifier, "new");
+            var opening = tokens.Expect(TokenKind.Identifier, "new");
             var type = ParseType();
             if (type.Kind == TypeKind.Dictionary
                 && tokens.PeekAfterNewLines().Kind == TokenKind.OpenBrace)
@@ -744,7 +753,7 @@ public sealed class CSharpParser : IScriptParser
                 tokens.ConsumeLineBreaks();
                 return ParseDictionary(type);
             }
-            return new ObjectCreationExpression(type, arguments);
+            return SourceLocations.Record(new ObjectCreationExpression(type, arguments), opening);
         }
 
         var value = ConsumeValue();
@@ -815,8 +824,7 @@ public sealed class CSharpParser : IScriptParser
             // Qualified/generic element types are explicit lambda parameter types too.
             var type = tokens.Peek.Kind is TokenKind.Identifier or TokenKind.Dot or TokenKind.LessThan or TokenKind.OpenBracket
                 ? ParseType(allowEventDouble: true)
-                : types.ElementAtOrDefault(parameters.Count)
-                    ?? throw new ParseException("Lambda parameter requires a type", tokens.Current.Line, tokens.Current.Column);
+                : types.ElementAtOrDefault(parameters.Count) ?? new TypeReference("");
             var name = tokens.Expect(TokenKind.Identifier).Text;
             var defaultValue = tokens.TryConsume(TokenKind.Equals) ? ParseExpression() : null;
             parameters.Add(new ParameterDeclaration(name, type, startsOnNewLine, defaultValue));

@@ -45,6 +45,8 @@ internal static class ExpressionOperators
             || call.Arguments.Arguments.Any(argument => argument.StartsOnNewLine || HasLineBreaks(argument.Value)),
         ClampExpression clamp => clamp.Arguments.ClosingParenthesisStartsOnNewLine
             || clamp.Arguments.Arguments.Any(argument => argument.StartsOnNewLine || HasLineBreaks(argument.Value)),
+        ArrayQueryExpression query => query.CallbackStartsOnNewLine || query.SeedStartsOnNewLine
+            || query.ClosingParenthesisStartsOnNewLine || HasLineBreaks(query.Target),
         MathFunctionExpression math => math.Arguments.ClosingParenthesisStartsOnNewLine
             || math.Arguments.Arguments.Any(argument => argument.StartsOnNewLine || HasLineBreaks(argument.Value)),
         _ => false

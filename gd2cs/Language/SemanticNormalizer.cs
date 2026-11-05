@@ -308,7 +308,12 @@ internal sealed class SemanticNormalizer
                 invocation.Arguments.Arguments.Count == 0)
                 return new TypeDefaultExpression(type!);
         }
-        return type?.Kind == TypeKind.Bool ? NormalizeBoolean(value, scope) : NormalizeExpression(value, scope);
+        var normalized = type?.Kind == TypeKind.Bool ? NormalizeBoolean(value, scope) : NormalizeExpression(value, scope);
+        // Godot map() returns an untyped Array even when every mapped value has the same type.
+        if (type?.Kind == TypeKind.Array && type.TypeArguments.Count > 0
+            && normalized is ArrayQueryExpression { Operation: ArrayQueryOperation.Select })
+            throw SourceLocations.Error(value, "Select/map returns an untyped GDScript Array; use an inferred local or copy the result into a typed array with assign().");
+        return normalized;
     }
 
     // Parameters and locals live only for the duration of their owning callable.
@@ -437,6 +442,7 @@ internal sealed class SemanticNormalizer
     {
         IndexExpression index => ResolveType(index.Target, scope) is { } receiver
             && scope.GodotTypes.TryResolveValueIndexer(receiver.Name, out _),
+        ArrayQueryExpression { Operation: ArrayQueryOperation.Sum or ArrayQueryOperation.Aggregate } => false,
         ParenthesizedExpression parenthesized => CanGdScriptInfer(parenthesized.Expression, scope),
         _ => true
     };
@@ -685,16 +691,7 @@ internal sealed class SemanticNormalizer
             {
                 Value = NormalizeExpression(buffer.Value, scope)
             },
-            ObjectCreationExpression creation => creation with
-            {
-                Type = NormalizeType(creation.Type, scope.UserTypes),
-                Arguments = NormalizeArguments(creation.Arguments, scope),
-                Kind = godotTypes.IsBuiltInValueConstructor(
-                    NormalizeType(creation.Type, scope.UserTypes).Name,
-                    creation.Arguments.Arguments.Count)
-                        ? ConstructionKind.BuiltInValue
-                        : ConstructionKind.Object
-            },
+            ObjectCreationExpression creation => NormalizeCreation(creation, scope),
             ConversionExpression conversion => conversion with
             {
                 Type = NormalizeType(conversion.Type, scope.UserTypes),
@@ -765,6 +762,26 @@ internal sealed class SemanticNormalizer
        around calls or compound expressions cannot hide an uncast read inside them. C# object
        extraction first unwraps Variant, then uses as so incompatible objects still yield null.
        Assignment targets are exempt, while their receivers and keys are validated normally. */
+    // Generated query materializers preserve GD's eager array semantics in C#.
+    private Expression NormalizeCreation(ObjectCreationExpression creation, BindingScope scope)
+    {
+        var type = NormalizeType(creation.Type, scope.UserTypes);
+        var arguments = NormalizeArguments(creation.Arguments, scope);
+        if (language == ScriptLanguage.CSharp && type.Kind == TypeKind.Array
+            && arguments.Arguments.Count == 1
+            && arguments.Arguments[0].Value is ArrayQueryExpression query
+            && query.Operation is ArrayQueryOperation.Select or ArrayQueryOperation.Where
+            && SameHandlerType(type, query.ResultType))
+            return query;
+        return creation with
+        {
+            Type = type,
+            Arguments = arguments,
+            Kind = godotTypes.IsBuiltInValueConstructor(type.Name, creation.Arguments.Arguments.Count)
+                ? ConstructionKind.BuiltInValue : ConstructionKind.Object
+        };
+    }
+
     private Expression NormalizeCast(TypeReference type, Expression value, BindingScope scope)
     {
         type = NormalizeType(type, scope.UserTypes);
@@ -826,6 +843,8 @@ internal sealed class SemanticNormalizer
             return connection;
         if (TryNormalizeSignalEmission(invocation, scope, out var emission))
             return emission;
+        if (TryNormalizeArrayQuery(invocation, scope, out var query))
+            return query;
         if (TryNormalizeOrdering(invocation, scope, out var ordering))
             return ordering;
         if (TryNormalizeDictionaryArray(invocation, scope, out var dictionaryArray))
@@ -927,6 +946,12 @@ internal sealed class SemanticNormalizer
                 throw SourceLocations.Error(invocation, "ToArray() conversion supports only Godot arrays of Vector2, Vector3 or Color.");
             return new ArrayBufferExpression(member.Target, receiverType.TypeArguments[0]);
         }
+        // These LINQ operators have no equivalent with matching empty-input or lazy semantics.
+        if (language == ScriptLanguage.CSharp && receiverType.Kind == TypeKind.Array
+            && member.Member is "First" or "FirstOrDefault" or "Last" or "LastOrDefault"
+                or "Single" or "SingleOrDefault" or "Average" or "Min" or "Max"
+                or "Distinct" or "GroupBy" or "SelectMany" or "Skip" or "Take" or "ToList")
+            throw SourceLocations.Error(invocation, $"Unsupported LINQ operation '{member.Member}' on a Godot array; use an explicit loop instead.");
         if (receiverType.Kind == TypeKind.Callable &&
             member.Member == (language == ScriptLanguage.CSharp ? "Call" : "call"))
             return new CallableInvocationExpression(member.Target, arguments);
@@ -950,6 +975,10 @@ internal sealed class SemanticNormalizer
                 arguments.Arguments.Count,
                 out var operation))
         {
+            // filter(predicate).size() is the eager GD equivalent of LINQ Count(predicate).
+            if (operation == CollectionOperation.Count
+                && member.Target is ArrayQueryExpression { Operation: ArrayQueryOperation.Where } filtered)
+                return filtered with { Operation = ArrayQueryOperation.Count, ResultType = new TypeReference("int") };
             return new CollectionOperationExpression(member.Target, operation, arguments);
         }
         // Script declarations shadow inherited native methods; their original names are authoritative.
@@ -1050,6 +1079,143 @@ internal sealed class SemanticNormalizer
         }
         throw SourceLocations.Error(invocation,
             $"Unsupported collection ordering operation '{member.Member}'. Use Array.sort()/Sort(), reverse()/Reverse(), shuffle()/Shuffle(), or sort_custom()/gdSortCustom(array, predicate) with a typed Boolean comparator.");
+    }
+
+    // Bind query callbacks against the collection element before visiting their bodies. This
+    // avoids treating inferred lambda parameters as Variant and keeps nested queries typed.
+    private bool TryNormalizeArrayQuery(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = invocation;
+        if (invocation.Target is not MemberAccessExpression member)
+            return false;
+        var operation = (language, member.Member) switch
+        {
+            (ScriptLanguage.CSharp, "Select") or (ScriptLanguage.GdScript, "map") => ArrayQueryOperation.Select,
+            (ScriptLanguage.CSharp, "Where") or (ScriptLanguage.GdScript, "filter") => ArrayQueryOperation.Where,
+            (ScriptLanguage.CSharp, "Any") or (ScriptLanguage.GdScript, "any") => ArrayQueryOperation.Any,
+            (ScriptLanguage.CSharp, "All") or (ScriptLanguage.GdScript, "all") => ArrayQueryOperation.All,
+            (ScriptLanguage.CSharp, "Aggregate") or (ScriptLanguage.GdScript, "reduce") => ArrayQueryOperation.Aggregate,
+            (ScriptLanguage.CSharp, "Sum") => ArrayQueryOperation.Sum,
+            (ScriptLanguage.CSharp, "Count") when invocation.Arguments.Arguments.Count == 1 => ArrayQueryOperation.Count,
+            _ => (ArrayQueryOperation?)null
+        };
+        if (operation is null)
+            return false;
+        var target = NormalizeExpression(member.Target, scope);
+        var targetType = ResolveType(target, scope);
+        if (targetType is null || targetType.Name.Length == 0)
+            throw SourceLocations.Error(invocation, "Array query requires a known typed Godot Array receiver; declare its element type explicitly.");
+        if (language == ScriptLanguage.CSharp && targetType.Name is "List" or "IList" or "IEnumerable"
+            or "System.Collections.Generic.List" or "System.Collections.Generic.IList" or "System.Collections.Generic.IEnumerable")
+            throw SourceLocations.Error(invocation, "LINQ queries currently require a typed Godot.Collections.Array; .NET collection types are not supported.");
+        if (targetType?.Kind != TypeKind.Array || targetType.TypeArguments.Count != 1)
+            return false;
+        var elementType = targetType.TypeArguments[0];
+        var arguments = invocation.Arguments.Arguments;
+        if (language == ScriptLanguage.CSharp && operation == ArrayQueryOperation.Any && arguments.Count == 0)
+        {
+            result = new UnaryExpression("not", new CollectionOperationExpression(target,
+                CollectionOperation.IsEmpty, new ArgumentList([], false)));
+            return true;
+        }
+        if (operation == ArrayQueryOperation.Sum && arguments.Count == 0)
+        {
+            if (elementType.Kind is not (TypeKind.Int32 or TypeKind.Float32))
+                throw SourceLocations.Error(invocation, "Sum requires an int or float array.");
+            var name = "item";
+            for (var suffix = 2; scope.Resolve(name) is not null; suffix++)
+                name = "item" + suffix;
+            var identity = new LambdaExpression(new ParameterList([new ParameterDeclaration(name, elementType)], false),
+                elementType, [new ReturnStatement(new ValueExpression(name))], true);
+            result = new ArrayQueryExpression(target, ArrayQueryOperation.Sum, identity, null, elementType);
+            return true;
+        }
+        var aggregate = operation == ArrayQueryOperation.Aggregate;
+        if (arguments.Count != (aggregate ? 2 : 1))
+            throw SourceLocations.Error(invocation, "Array queries require an inline lambda; reduce/Aggregate also require an explicit seed.");
+        var callbackIndex = aggregate && language == ScriptLanguage.CSharp ? 1 : 0;
+        if (arguments[callbackIndex].Value is not LambdaExpression callback || !callback.IsInline
+            || callback.Elements.Count != 1 || callback.Parameters.Parameters.Count != (aggregate ? 2 : 1))
+            throw SourceLocations.Error(invocation, "Array queries require an inline lambda with matching parameters.");
+        var seed = aggregate ? NormalizeExpression(arguments[1 - callbackIndex].Value, scope) : null;
+        var accumulatorType = aggregate ? ResolveType(seed, scope) : null;
+        if (aggregate && accumulatorType is null)
+            throw SourceLocations.Error(invocation, "The reduction seed requires a known concrete type.");
+        var expectedTypes = aggregate ? new List<TypeReference> { accumulatorType!, elementType } : [elementType];
+        var parameters = callback.Parameters.Parameters.ToList();
+        for (var index = 0; index < parameters.Count; index++)
+        {
+            if (parameters[index].DefaultValue is not null)
+                throw SourceLocations.Error(invocation, "Array query lambda parameters cannot have default values.");
+            if (parameters[index].Type.Name.Length > 0
+                && !SameHandlerType(NormalizeType(parameters[index].Type, scope.UserTypes), expectedTypes[index]))
+                throw SourceLocations.Error(invocation, "Array query lambda parameter types must match the collection and seed.");
+            parameters[index] = parameters[index] with { Type = expectedTypes[index] };
+        }
+        var body = callback.Elements[0] switch
+        {
+            ReturnStatement { Value: not null } returned => returned.Value,
+            ExpressionStatement expression => expression.Expression,
+            _ => throw SourceLocations.Error(invocation, "Array query lambda must return a value.")
+        };
+        Expression normalizedBody;
+        TypeReference? bodyType;
+        scope.Push();
+        try
+        {
+            foreach (var parameter in parameters)
+                scope.Declare(parameter.Name, parameter.Type);
+            normalizedBody = NormalizeExpression(body, scope);
+            bodyType = ResolveType(normalizedBody, scope);
+        }
+        finally { scope.Pop(); }
+        if (bodyType is null || bodyType.Kind == TypeKind.Variant || bodyType.Name.Length == 0)
+            throw SourceLocations.Error(invocation, "Array query lambda must have a known return type; use an explicit cast if needed.");
+        if (callback.ReturnType.Kind != TypeKind.Void && !SameHandlerType(callback.ReturnType, bodyType))
+            throw SourceLocations.Error(invocation, "Array query lambda return annotation must match its result.");
+        if (operation is ArrayQueryOperation.Where or ArrayQueryOperation.Any or ArrayQueryOperation.All or ArrayQueryOperation.Count
+            && bodyType.Kind != TypeKind.Bool)
+            throw SourceLocations.Error(invocation, "Array query predicate must return bool.");
+        if (aggregate && !SameHandlerType(accumulatorType!, bodyType))
+            throw SourceLocations.Error(invocation, "Reduction callback result must match the seed type.");
+        if (operation == ArrayQueryOperation.Sum && bodyType.Kind is not (TypeKind.Int32 or TypeKind.Float32))
+            throw SourceLocations.Error(invocation, "Sum requires an int or float selector.");
+        callback = callback with
+        {
+            Parameters = callback.Parameters with { Parameters = parameters },
+            ReturnType = bodyType,
+            Elements = [new ReturnStatement(normalizedBody)]
+        };
+        // The reserved accumulator spelling distinguishes generated Sum from Aggregate:
+        // C# Sum and Aggregate can differ on overflow even with the same reducer and seed.
+        if (language == ScriptLanguage.GdScript && aggregate
+            && seed is ValueExpression { Text: "0" or "0.0" }
+            && normalizedBody is BinaryExpression { Operator: "+", Left: ValueExpression left } addition
+            && left.Text == parameters[0].Name && left.Text.StartsWith("gd2csSum", StringComparison.Ordinal)
+            && !EventParameterConversions.Names(addition.Right).Contains(left.Text)
+            && bodyType.Kind is TypeKind.Int32 or TypeKind.Int64 or TypeKind.Float32)
+        {
+            operation = ArrayQueryOperation.Sum;
+            seed = null;
+            callback = callback with
+            {
+                Parameters = callback.Parameters with { Parameters = [parameters[1]] },
+                Elements = [new ReturnStatement(addition.Right)]
+            };
+        }
+        var resultType = operation switch
+        {
+            ArrayQueryOperation.Select => new TypeReference("Array", [bodyType]),
+            ArrayQueryOperation.Where => targetType,
+            ArrayQueryOperation.Any or ArrayQueryOperation.All => new TypeReference("bool"),
+            ArrayQueryOperation.Count => new TypeReference("int"),
+            _ => bodyType
+        };
+        result = new ArrayQueryExpression(target, operation.Value, callback, seed, resultType,
+            arguments[callbackIndex].StartsOnNewLine,
+            seed is not null && arguments[1 - callbackIndex].StartsOnNewLine,
+            invocation.Arguments.ClosingParenthesisStartsOnNewLine);
+        return true;
     }
 
     private CustomSortExpression NormalizeCustomSort(Expression target, TypeReference? type,
@@ -1661,6 +1827,7 @@ internal sealed class SemanticNormalizer
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
         ClampExpression clamp => clamp.Type,
+        ArrayQueryExpression query => query.ResultType,
         MathFunctionExpression math => math.Type,
         CallableMethodGroupExpression => new TypeReference("Callable"),
         CallableNullExpression => new TypeReference("bool"),

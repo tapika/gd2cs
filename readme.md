@@ -243,6 +243,12 @@ shape.polygon = PackedVector2Array(points)
 
 Only conversion from an existing, matching typed array is supported: `PackedVector2Array(points)` becomes `points.ToArray()` in C#, and backtranslation restores the packed conversion. The same applies to `Array[Vector3]` and `Array[Color]`. Nonempty array literals can also be converted; initializer line breaks are preserved. C# adds `using System.Linq;` when required. Conversion copies the values into an API buffer; it does not turn the mutable Godot array into packed storage or add packed-array mutation support. Calls on unrelated types named `ToArray` are not rewritten.
 
+### Array queries
+
+Typed Godot arrays support inline expression lambdas in both directions: LINQ `Select`, `Where`, `Any`, `All`, and seeded `Aggregate` map to GDScript `map`, `filter`, `any`, `all`, and `reduce`. `Sum` maps to a seeded reduction; `Count(predicate)` maps to `filter(...).size()`, and parameterless `Any()` to `not is_empty()`. `Sum` supports `int` and `float` selectors or arrays. Indexed callbacks, method groups, block lambdas, unseeded `Aggregate`, and .NET collections such as `List<T>` are not supported. Use an explicit loop for unsupported operators.
+
+GDScript array queries are eager; LINQ `Select` and `Where` are normally lazy. gd2cs materializes their results into Godot arrays in C#, so do not rely on deferred execution, subsequent collection changes, or callback timing. GDScript `map` returns an untyped array: keep its result in an inferred local, or explicitly copy it into a typed array using `assign`. GDScript's numeric precision and overflow behavior also differ from C# `int` and `float`; avoid relying on boundary behavior in sums. Generated sum reducers reserve callback names beginning with `gd2csSum` for round-trip recognition.
+
 ### Empty array literals
 
 `gd2cs` requires array literals to contain at least one element. Empty literals such as `var values := []` and `var values : Array[int] = []` are rejected. For an initially empty array, declare its type without an initializer:

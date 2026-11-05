@@ -277,7 +277,7 @@ public sealed class GdScriptParser : IScriptParser
         return new ConditionalBranch(condition, ParseBody(statementColumn));
     }
 
-    private ParameterList ParseParameters()
+    private ParameterList ParseParameters(bool allowInferred = false)
     {
         var result = new List<ParameterDeclaration>();
         var startsOnNewLine = tokens.TryConsume(TokenKind.NewLine);
@@ -286,8 +286,9 @@ public sealed class GdScriptParser : IScriptParser
         while (true)
         {
             var name = tokens.Expect(TokenKind.Identifier).Text;
-            tokens.Expect(TokenKind.Colon);
-            var type = ParseType();
+            var type = tokens.TryConsume(TokenKind.Colon) ? ParseType()
+                : allowInferred ? new TypeReference("")
+                : throw new ParseException("Parameter requires a type", tokens.Current.Line, tokens.Current.Column);
             var defaultValue = tokens.TryConsume(TokenKind.Equals) ? ParseExpression() : null;
             result.Add(new ParameterDeclaration(name, type, startsOnNewLine, defaultValue));
             if (!tokens.TryConsume(TokenKind.Comma))
@@ -682,7 +683,7 @@ public sealed class GdScriptParser : IScriptParser
     {
         tokens.Expect(TokenKind.Identifier, "func");
         tokens.Expect(TokenKind.OpenParenthesis);
-        var parameters = ParseParameters();
+        var parameters = ParseParameters(allowInferred: true);
         var returnType = tokens.TryConsume(TokenKind.Arrow) ? ParseType() : new TypeReference("void");
         tokens.Expect(TokenKind.Colon);
         var isInline = !tokens.TryConsume(TokenKind.NewLine);

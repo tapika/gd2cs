@@ -13,6 +13,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private bool requiresArrayBuffers;
     private bool requiresCustomSort;
     private bool requiresStringify;
+    private bool requiresLinq;
     private readonly HashSet<CollectionOperation> dictionaryArrayHelpers = new();
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
     private readonly Dictionary<TypeCheckExpression, string> patternNames = new(ReferenceEqualityComparer.Instance);
@@ -30,6 +31,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         requiresArrayBuffers = false;
         requiresCustomSort = false;
         requiresStringify = false;
+        requiresLinq = false;
         dictionaryArrayHelpers.Clear();
         patternNames.Clear();
         occupiedNames = EventParameterConversions.Names(model.Elements);
@@ -56,7 +58,7 @@ public sealed class CSharpEmitter : IScriptEmitter
                     throw new NotSupportedException("Unsupported language dialect.");
             }
         }
-        if (requiresArrayBuffers)
+        if (requiresArrayBuffers || requiresLinq)
             output.Insert(usingOffset, "using System.Linq;" + Environment.NewLine);
         return output.ToString().Replace(Environment.NewLine, "\n");
     }
@@ -360,6 +362,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append(MathFunctionNames.ToCSharp(math.Name));
                 EmitArguments(output, math.Arguments, indent);
                 break;
+            case ArrayQueryExpression query:
+                EmitArrayQuery(output, query, indent);
+                break;
             case CustomSortExpression sort:
                 requiresCustomSort = true;
                 output.Append("gdSortCustom");
@@ -613,6 +618,49 @@ public sealed class CSharpEmitter : IScriptEmitter
             output.Append(indent);
         }
         if (hasLayout)
+            output.Append(')');
+    }
+
+    private void EmitArrayQuery(StringBuilder output, ArrayQueryExpression query, string indent)
+    {
+        requiresLinq = true;
+        // Godot array map/filter execute immediately and return arrays, unlike lazy LINQ.
+        var materialize = query.Operation is ArrayQueryOperation.Select or ArrayQueryOperation.Where;
+        if (materialize)
+        {
+            output.Append("new ");
+            EmitType(output, query.ResultType);
+            output.Append('(');
+        }
+        EmitExpression(output, query.Target, indent);
+        output.Append('.');
+        output.Append(query.Operation.ToString());
+        output.Append('(');
+        if (query.Seed is not null)
+        {
+            if (query.SeedStartsOnNewLine)
+            {
+                output.AppendLine();
+                output.Append(indent + "    ");
+            }
+            EmitExpression(output, query.Seed, indent);
+            output.Append(',');
+        }
+        if (query.CallbackStartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent + "    ");
+        }
+        else if (query.Seed is not null)
+            output.Append(' ');
+        EmitLambda(output, query.Callback, indent, asCallable: false);
+        if (query.ClosingParenthesisStartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent);
+        }
+        output.Append(')');
+        if (materialize)
             output.Append(')');
     }
 

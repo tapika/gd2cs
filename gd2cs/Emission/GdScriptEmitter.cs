@@ -10,6 +10,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
     private const string space_colon = " : ";
     private const string colon = ": ";
     private readonly GodotTypeCatalog godotTypes;
+    private HashSet<string> occupiedNames = new(StringComparer.Ordinal);
 
     public GdScriptEmitter(GodotTypeCatalog godotTypes)
     {
@@ -18,6 +19,8 @@ public sealed class GdScriptEmitter : IScriptEmitter
 
     public string Emit(ScriptModel model)
     {
+        // Generated reducer parameters must not shadow names in the containing script.
+        occupiedNames = EventParameterConversions.Names(model.Elements);
         var output = new StringBuilder();
         foreach (var element in model.Elements)
         {
@@ -533,6 +536,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(math.Name);
                 EmitArguments(output, math.Arguments, indent);
                 break;
+            case ArrayQueryExpression query:
+                EmitArrayQuery(output, query, indent);
+                break;
             case CustomSortExpression sort:
                 EmitExpression(output, sort.Target, indent);
                 output.Append(".sort_custom");
@@ -638,6 +644,67 @@ public sealed class GdScriptEmitter : IScriptEmitter
         EmitExpression(output, child, indent, booleanContext: operation is "and" or "or");
         if (grouped)
             output.Append(')');
+    }
+
+    private void EmitArrayQuery(StringBuilder output, ArrayQueryExpression query, string indent)
+    {
+        EmitExpression(output, query.Target, indent);
+        output.Append(query.Operation switch
+        {
+            ArrayQueryOperation.Select => ".map(",
+            ArrayQueryOperation.Where => ".filter(",
+            ArrayQueryOperation.Count => ".filter(",
+            ArrayQueryOperation.Any => ".any(",
+            ArrayQueryOperation.All => ".all(",
+            _ => ".reduce("
+        });
+        if (query.CallbackStartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent + "\t");
+        }
+        if (query.Operation == ArrayQueryOperation.Sum)
+        {
+            var used = EventParameterConversions.Names(query.Callback);
+            // Preserve Sum's identity separately from an otherwise identical Aggregate.
+            var name = "gd2csSum";
+            for (var index = 2; used.Contains(name) || occupiedNames.Contains(name); index++)
+                name = "gd2csSum" + index;
+            var value = ((ReturnStatement)query.Callback.Elements[0]).Value!;
+            var parameters = new List<ParameterDeclaration> { new(name, query.ResultType) };
+            parameters.AddRange(query.Callback.Parameters.Parameters);
+            var reducer = query.Callback with
+            {
+                Parameters = new ParameterList(parameters, false),
+                Elements = [new ReturnStatement(new BinaryExpression(new ValueExpression(name), "+", value))]
+            };
+            EmitLambda(output, reducer, indent);
+            output.Append(query.ResultType.Kind == TypeKind.Float32 ? ", 0.0" : ", 0");
+        }
+        else
+        {
+            EmitLambda(output, query.Callback, indent);
+            if (query.Seed is not null)
+            {
+                output.Append(',');
+                if (query.SeedStartsOnNewLine)
+                {
+                    output.AppendLine();
+                    output.Append(indent + "\t");
+                }
+                else
+                    output.Append(' ');
+                EmitExpression(output, query.Seed, indent);
+            }
+        }
+        if (query.ClosingParenthesisStartsOnNewLine)
+        {
+            output.AppendLine();
+            output.Append(indent);
+        }
+        output.Append(')');
+        if (query.Operation == ArrayQueryOperation.Count)
+            output.Append(".size()");
     }
 
     private void EmitLambda(StringBuilder output, LambdaExpression lambda, string indent)
