@@ -474,7 +474,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 break;
             case CallableInvocationExpression callable:
                 EmitExpression(output, callable.Target, indent);
-                output.Append(".call");
+                output.Append(callable.IsDeferred ? ".call_deferred" : ".call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
             case StringifyExpression stringify:

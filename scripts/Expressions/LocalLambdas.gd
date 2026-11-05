@@ -3,6 +3,17 @@ extends RefCounted
 
 var Value := 0
 
+func deferCalls(callback: Callable):
+	finish.call_deferred()
+	storeValue.call_deferred(3)
+	callback.call_deferred(4)
+
+func finish():
+	Value = 0
+
+func storeValue(value: int):
+	Value = value
+
 func replace():
 	var callback : Callable
 	callback = Callable()

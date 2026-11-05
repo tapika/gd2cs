@@ -849,6 +849,18 @@ internal sealed class SemanticNormalizer
             return ordering;
         if (TryNormalizeDictionaryArray(invocation, scope, out var dictionaryArray))
             return dictionaryArray;
+        // A GDScript method reference is a Callable; C# needs an explicit delegate factory.
+        if (language == ScriptLanguage.GdScript
+            && invocation.Target is MemberAccessExpression { Member: "call_deferred", Target: ValueExpression name }
+            && scope.Resolve(name.Text) is null && scope.FindHandler(name.Text) is { } deferredMethod
+            && (scope.HasCurrentInstance || deferredMethod.IsStatic))
+        {
+            var types = deferredMethod.Parameters.Parameters.Select(parameter => parameter.Type).ToList();
+            if (deferredMethod.ReturnType.Kind != TypeKind.Void)
+                types.Add(deferredMethod.ReturnType);
+            return new CallableInvocationExpression(new CallableMethodGroupExpression(name, types),
+                NormalizeArguments(invocation.Arguments, scope), IsDeferred: true);
+        }
         Expression target;
         // A dictionary method call is not dictionary-dot key access (size() versus .size).
         if (invocation.Target is MemberAccessExpression calledMember
@@ -955,6 +967,9 @@ internal sealed class SemanticNormalizer
         if (receiverType.Kind == TypeKind.Callable &&
             member.Member == (language == ScriptLanguage.CSharp ? "Call" : "call"))
             return new CallableInvocationExpression(member.Target, arguments);
+        if (receiverType.Kind == TypeKind.Callable &&
+            member.Member == (language == ScriptLanguage.CSharp ? "CallDeferred" : "call_deferred"))
+            return new CallableInvocationExpression(member.Target, arguments, IsDeferred: true);
         if (language == ScriptLanguage.GdScript &&
             receiverType.Kind == TypeKind.Callable &&
             member.Member == "is_null" &&

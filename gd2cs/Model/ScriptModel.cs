@@ -122,10 +122,11 @@ public sealed record LambdaExpression(
     List<SyntaxElement> Elements,
     bool IsInline) : Expression;
 
-// Invokes a Callable independently of C# Call and GDScript call spellings.
+// Invokes a Callable immediately or deferred, independently of dialect spelling.
 public sealed record CallableInvocationExpression(
     Expression Target,
-    ArgumentList Arguments) : Expression;
+    ArgumentList Arguments,
+    bool IsDeferred = false) : Expression;
 
 // Clamps a numeric value independently of dialect spelling; null retains an unresolved generic clamp.
 public sealed record ClampExpression(ArgumentList Arguments, TypeReference? Type) : Expression;

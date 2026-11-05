@@ -6,6 +6,23 @@ public partial class LocalLambdas : RefCounted
 {
 	public int Value = 0;
 
+	public void deferCalls(Callable callback)
+	{
+		Callable.From(finish).CallDeferred();
+		Callable.From<int>(storeValue).CallDeferred(3);
+		callback.CallDeferred(4);
+	}
+
+	public void finish()
+	{
+		Value = 0;
+	}
+
+	public void storeValue(int value)
+	{
+		Value = value;
+	}
+
 	public void replace()
 	{
 		Callable callback = default;

@@ -292,7 +292,7 @@ public sealed class CSharpEmitter : IScriptEmitter
                 break;
             case CallableInvocationExpression callable:
                 EmitExpression(output, callable.Target, indent);
-                output.Append(".Call");
+                output.Append(callable.IsDeferred ? ".CallDeferred" : ".Call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
             case StringifyExpression stringify:
