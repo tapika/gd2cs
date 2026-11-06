@@ -175,6 +175,10 @@ else:
     applyValue(second)
 ```
 
+### Generic containers
+
+For scripts translated by gd2cs, prefer typed Godot containers over .NET collections: use `Godot.Collections.Array<T>` instead of `List<T>` and `Godot.Collections.Dictionary<TKey, TValue>` instead of `Dictionary<TKey, TValue>`. These map to GDScript `Array[Type]` and `Dictionary[KeyType, ValueType]`; specify the element, key and value types. General .NET collection operations are not necessarily supported by gd2cs. Godot also restricts nested typed collections; see the collection type hints below.
+
 ### Untyped dictionaries
 
 `gd2cs` rejects untyped `Dictionary` declarations (including `Array[Dictionary]`), anonymous dictionary literals, and non-generic C# `Godot.Collections.Dictionary`. Specify both key and value types instead:
