@@ -55,6 +55,11 @@ public sealed class GdScriptParser : IScriptParser
                 break;
             if (ParseTrivia(elements))
                 continue;
+            if (tokens.Current.Text == "enum")
+            {
+                elements.Add(EnumParser.Parse(tokens, () => ParseExpression(), ScriptLanguage.GdScript));
+                continue;
+            }
             if (tokens.Current.Text == "class")
             {
                 elements.Add(ToNested(ParseClass(false)));

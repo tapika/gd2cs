@@ -14,9 +14,11 @@ public sealed class CSharpParser : IScriptParser
 
     private TokenReader tokens = null!;
     private int groupingDepth;
+    private readonly HashSet<string> enumTypeNames = new(StringComparer.Ordinal);
 
     public ScriptModel Parse(string source)
     {
+        CollectEnumNames(source);
         tokens = new TokenReader(new Lexer(source, true, cSharpIdentifiers: true));
         groupingDepth = 0;
         ParseUsing("Godot");
@@ -35,6 +37,32 @@ public sealed class CSharpParser : IScriptParser
         }
         tokens.Expect(TokenKind.EndOfFile);
         return new ScriptModel(elements);
+    }
+
+    // Enum casts may precede their declarations. A token-only prepass distinguishes
+    // their cast parentheses from grouped values; scoped type binding still happens later.
+    private void CollectEnumNames(string source)
+    {
+        enumTypeNames.Clear();
+        var lexer = new Lexer(source, false, cSharpIdentifiers: true);
+        var followsEnum = false;
+        for (var token = lexer.Next(); token.Kind != TokenKind.EndOfFile; token = lexer.Next())
+        {
+            if (followsEnum && token.Kind == TokenKind.Identifier)
+                enumTypeNames.Add(token.Text);
+            followsEnum = token.Kind == TokenKind.Identifier && token.Text == "enum";
+        }
+    }
+
+    private bool IsEnumConversion()
+    {
+        if (tokens.Current.Kind != TokenKind.OpenParenthesis)
+            return false;
+        var offset = 1;
+        return LookAheadType(ref offset) && tokens.PeekAt(offset).Kind == TokenKind.CloseParenthesis
+            && enumTypeNames.Contains(tokens.PeekAt(offset - 1).Text)
+            && tokens.PeekAt(offset + 1).Kind is TokenKind.Identifier or TokenKind.Number
+                or TokenKind.OpenParenthesis or TokenKind.Plus or TokenKind.Minus or TokenKind.Tilde;
     }
 
     // Uses one grammar path for global and nested partial class declarations.
@@ -93,6 +121,11 @@ public sealed class CSharpParser : IScriptParser
             }
 
             ExpectPublic();
+            if (tokens.Current.Text == "enum")
+            {
+                elements.Add(EnumParser.Parse(tokens, () => ParseExpression(), ScriptLanguage.CSharp));
+                continue;
+            }
             var isStatic = tokens.TryConsume(TokenKind.Identifier, "static");
             var isOverride = tokens.TryConsume(TokenKind.Identifier, "override");
             var isReadonly = isStatic && tokens.TryConsume(TokenKind.Identifier, "readonly");
@@ -721,6 +754,8 @@ public sealed class CSharpParser : IScriptParser
             return ParseInterpolatedString(tokens.Expect(TokenKind.InterpolatedString).Text);
         if (tokens.Current.Kind == TokenKind.OpenParenthesis && tokens.Peek.Text is "float" or "int" or "uint"
             && tokens.PeekAt(2).Kind == TokenKind.CloseParenthesis)
+            return ParseConversion();
+        if (IsEnumConversion())
             return ParseConversion();
         if (IsLambda())
             return ParseLambda(new List<TypeReference>());

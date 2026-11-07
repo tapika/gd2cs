@@ -196,6 +196,10 @@ else:
     applyValue(second)
 ```
 
+### Enums
+
+Named enums inside the script class or a nested class translate between GDScript `enum State { Ready, Done = 4 }` and C# `public enum State { Ready, Done = 4 }`. Implicit numbering, explicit integer constant expressions using earlier entries, aliases, comments, and compact/multiline declarations are supported. Enum types work on fields, locals, parameters, returns, and typed arrays; `value as State` maps to C# `(State)value`. Values must fit the C# `int` range. Anonymous enums, other C# backing types, and GDScript's enum dictionary APIs are not supported.
+
 ### Generic containers
 
 For scripts translated by gd2cs, prefer typed Godot containers over .NET collections: use `Godot.Collections.Array<T>` instead of `List<T>` and `Godot.Collections.Dictionary<TKey, TValue>` instead of `Dictionary<TKey, TValue>`. These map to GDScript `Array[Type]` and `Dictionary[KeyType, ValueType]`; specify the element, key and value types. General .NET collection operations are not necessarily supported by gd2cs. Godot also restricts nested typed collections; see the collection type hints below.

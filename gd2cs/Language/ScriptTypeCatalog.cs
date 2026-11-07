@@ -11,6 +11,8 @@ internal sealed class ScriptTypeCatalog
 
     // Fully qualified identities prevent equally named classes in different nested scopes colliding.
     private readonly Dictionary<string, ClassSymbol> classes = new(StringComparer.Ordinal);
+    // Enum identities share class lexical lookup; their entries are typed values, not fields.
+    private readonly Dictionary<string, EnumDeclaration> enums = new(StringComparer.Ordinal);
     private readonly GodotTypeCatalog godotTypes;
     private readonly ScriptLanguage language;
 
@@ -38,6 +40,11 @@ internal sealed class ScriptTypeCatalog
                 members.Add(property.Name, property.Type);
             else if (element is ConstantDeclaration constant)
                 members.Add(constant.Name, constant.Type);
+            else if (element is EnumDeclaration enumeration)
+            {
+                enums.Add(path + "." + enumeration.Name, enumeration);
+                members.Add(enumeration.Name, new TypeReference(enumeration.Name, [], IsEnum: true));
+            }
         }
         classes.Add(path, new ClassSymbol(path, baseType, members, elements.OfType<MethodDeclaration>().ToList()));
         foreach (var nested in elements.OfType<NestedClassDeclaration>())
@@ -60,16 +67,37 @@ internal sealed class ScriptTypeCatalog
         return classes.GetValueOrDefault(name);
     }
 
+    // Resolve short and qualified enum names in the nearest enclosing class first.
+    private string? FindEnum(string name, string context)
+    {
+        for (var scope = context; scope.Length > 0;)
+        {
+            if (enums.ContainsKey(scope + "." + name))
+                return scope + "." + name;
+            var separator = scope.LastIndexOf('.');
+            scope = separator < 0 ? "" : scope[..separator];
+        }
+        return enums.ContainsKey(name) ? name : null;
+    }
+
+    public bool IsEnum(string name, string context) => FindEnum(name, context) is not null;
+
     // Field and method result types belong to their declaration's scope, not the caller's scope.
     private TypeReference RebindType(TypeReference type, string owner, string caller)
     {
         var name = type.Name;
         var native = type.GodotName;
         var symbol = FindClass(name, owner);
+        var enumPath = FindEnum(name, owner);
         if (symbol is not null)
         {
             if (FindClass(name, caller)?.Path != symbol.Path)
                 name = symbol.Path;
+        }
+        else if (enumPath is not null)
+        {
+            if (FindEnum(name, caller) != enumPath)
+                name = enumPath;
         }
         else if (godotTypes.TryResolveTypeName(name, language, out var managed, out var gdName))
         {
@@ -80,6 +108,7 @@ internal sealed class ScriptTypeCatalog
         {
             Name = name,
             GodotName = native,
+            IsEnum = enumPath is not null,
             TypeArguments = type.TypeArguments.Select(argument => RebindType(argument, owner, caller)).ToList()
         };
     }
@@ -102,6 +131,9 @@ internal sealed class ScriptTypeCatalog
     {
         if (receiver is null)
             return null;
+        if (FindEnum(receiver.Name, context) is { } enumPath
+            && enums[enumPath].Elements.OfType<EnumMemberDeclaration>().Any(entry => entry.Name == member))
+            return receiver with { IsEnum = true };
         foreach (var symbol in Hierarchy(receiver, context))
             if (symbol.Members.TryGetValue(member, out var type))
                 return RebindType(type, symbol.Path, context);

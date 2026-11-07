@@ -88,6 +88,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     EmitExpression(output, constant.Value, memberIndent);
                     output.AppendLine();
                     break;
+                case EnumDeclaration enumeration:
+                    EnumEmitter.Emit(output, enumeration, memberIndent, ScriptLanguage.GdScript,
+                        (value, entryIndent) => EmitExpression(output, value, entryIndent));
+                    break;
                 case FieldDeclaration field:
                     output.Append(memberIndent);
                     if (field.IsStatic)
@@ -477,6 +481,11 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(callable.IsDeferred ? ".call_deferred" : ".call");
                 EmitArguments(output, callable.Arguments, indent);
                 break;
+            case ScriptEnumExpression constant:
+                EmitExpression(output, constant.Target, indent);
+                output.Append('.');
+                output.Append(constant.Member);
+                break;
             case StringifyExpression stringify:
                 output.Append("str");
                 EmitArguments(output, stringify.Arguments, indent);
@@ -502,6 +511,13 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append(value.Text);
                 break;
             case ConversionExpression conversion:
+                if (conversion.Type.IsEnum)
+                {
+                    EmitExpression(output, conversion.Value, indent);
+                    output.Append(" as ");
+                    EmitType(output, conversion.Type);
+                    break;
+                }
                 EmitType(output, conversion.Type);
                 output.Append('(');
                 EmitExpression(output, conversion.Value, indent);

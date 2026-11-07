@@ -87,6 +87,10 @@ public sealed class CSharpEmitter : IScriptEmitter
                 case ConstantDeclaration constant:
                     EmitConstant(output, constant, indent);
                     break;
+                case EnumDeclaration enumeration:
+                    EnumEmitter.Emit(output, enumeration, indent + "    ", ScriptLanguage.CSharp,
+                        (value, entryIndent) => EmitExpression(output, value, entryIndent));
+                    break;
                 case FieldDeclaration field:
                     EmitField(output, field, indent);
                     break;
@@ -146,7 +150,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private void EmitConstant(StringBuilder output, ConstantDeclaration constant, string indent)
     {
         var isScalar = constant.Type.Kind is TypeKind.Bool or TypeKind.Int32 or TypeKind.Int64
-            or TypeKind.Float32 or TypeKind.String;
+            or TypeKind.Float32 or TypeKind.String or TypeKind.Enum;
         output.Append(indent + "    public ");
         output.Append((isScalar || constant.Value is GodotEnumExpression) && IsConstantExpression(constant.Value)
             ? "const " : "static readonly ");
@@ -162,7 +166,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     // Keep scalar/enum constant expressions as C# const; use readonly for everything else.
     private static bool IsConstantExpression(Expression expression) => expression switch
     {
-        ValueExpression or GodotEnumExpression => true,
+        ValueExpression or GodotEnumExpression or ScriptEnumExpression => true,
         GodotStaticMemberExpression member => member.Member.Kind == GodotStaticMemberKind.Constant,
         UnaryExpression unary => IsConstantExpression(unary.Operand),
         BinaryExpression binary => IsConstantExpression(binary.Left) && IsConstantExpression(binary.Right),
@@ -294,6 +298,11 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, callable.Target, indent);
                 output.Append(callable.IsDeferred ? ".CallDeferred" : ".Call");
                 EmitArguments(output, callable.Arguments, indent);
+                break;
+            case ScriptEnumExpression constant:
+                EmitExpression(output, constant.Target, indent);
+                output.Append('.');
+                output.Append(constant.Member);
                 break;
             case StringifyExpression stringify:
                 requiresStringify = true;
@@ -992,7 +1001,7 @@ public sealed class CSharpEmitter : IScriptEmitter
             TypeKind.Float32 => "0.0f",
             TypeKind.Float64 => "0.0",
             TypeKind.String => "string.Empty",
-            _ when type.Kind is TypeKind.StringName or TypeKind.NodePath or TypeKind.Callable => "default",
+            _ when type.Kind is TypeKind.StringName or TypeKind.NodePath or TypeKind.Callable or TypeKind.Enum => "default",
             _ => "null"
         });
         output.AppendLine(";");

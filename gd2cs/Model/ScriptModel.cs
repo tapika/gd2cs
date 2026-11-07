@@ -25,7 +25,8 @@ public sealed record ClassDeclaration(
 
 // Stores a canonical type identity and generic arguments. GodotName retains a reflected native
 // alias (e.g. AABB for Aabb); null keeps ordinary/user type spellings unchanged.
-public sealed record TypeReference(string Name, List<TypeReference> TypeArguments, string? GodotName = null)
+// IsEnum identifies declared script value types so defaults and casts never treat them as objects.
+public sealed record TypeReference(string Name, List<TypeReference> TypeArguments, string? GodotName = null, bool IsEnum = false)
 {
     // Creates a non-generic type reference without requiring an empty argument list at call sites.
     public TypeReference(string name) : this(name, new List<TypeReference>())
@@ -33,7 +34,7 @@ public sealed record TypeReference(string Name, List<TypeReference> TypeArgument
     }
 
     // Classifies equivalent C# and GDScript spellings as the same semantic type.
-    public TypeKind Kind => Name switch
+    public TypeKind Kind => IsEnum ? TypeKind.Enum : Name switch
     {
         "void" or "Void" => TypeKind.Void,
         "bool" or "Bool" => TypeKind.Bool,
@@ -71,6 +72,8 @@ public enum TypeKind
     Callable,
     GodotObject,
     UserObject,
+    // A declared script enum is an integer value type, not a nullable script object.
+    Enum,
     Array,
     Dictionary,
     // A contiguous API buffer (C# T[]), distinct from a mutable Godot Array<T>.
@@ -403,6 +406,16 @@ public sealed record NestedClassDeclaration(
     string Name,
     TypeReference BaseType,
     List<SyntaxElement> Elements) : MemberDeclaration;
+
+// Named enums retain explicit versus implicit values, declaration order, comments, and layout.
+public sealed record EnumDeclaration(string Name, List<SyntaxElement> Elements,
+    bool IsMultiline, bool HasTrailingComma, bool ClosingBraceStartsOnNewLine) : MemberDeclaration;
+
+// A missing value means zero for the first entry, otherwise the previous value plus one.
+public sealed record EnumMemberDeclaration(string Name, Expression? Value, bool StartsOnNewLine) : SyntaxElement;
+
+// A script enum entry retains its source qualifier and nominal type for inference and constants.
+public sealed record ScriptEnumExpression(Expression Target, string Member, TypeReference Type) : Expression;
 
 // Shares ordered parameters and body elements across constructors, methods, and destructors.
 public abstract record CallableDeclaration(

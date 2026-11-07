@@ -362,6 +362,30 @@ public sealed class TranspilerTests
         Assert.Equal(gd, transpiler.Transpile(legacy, Language.ScriptLanguage.CSharp, Language.ScriptLanguage.GdScript));
     }
 
+    [Theory]
+    [InlineData(".gd", "enum TokenState {", "enum {", "Anonymous enums")]
+    [InlineData(".cs", "public enum TokenState", "public enum TokenState : long", "Expected 'int'")]
+    [InlineData(".gd", "Alias = Parsed,", "Alias = 2147483648,", "int range")]
+    [InlineData(".cs", "Alias = Parsed,", "Alias = 2147483648,", "int range")]
+    [InlineData(".gd", "Alias = Parsed,", "Empty = Parsed,", "Duplicate enum member")]
+    [InlineData(".cs", "Alias = Parsed,", "Empty = Parsed,", "Duplicate enum member")]
+    [InlineData(".gd", "Parsed = 4,", "Parsed = 2147483647,", "int range")]
+    [InlineData(".cs", "Parsed = 4,", "Parsed = 2147483647,", "int range")]
+    [InlineData(".gd", "Alias = Parsed,", "Alias = missing(),", "integer constant expressions")]
+    [InlineData(".cs", "Alias = Parsed,", "Alias = missing(),", "integer constant expressions")]
+    [InlineData(".gd", "TokenState.Parsed", "TokenState.Unknown", "Unknown enum member")]
+    [InlineData(".cs", "TokenState.Parsed", "TokenState.Unknown", "Unknown enum member")]
+    public void RejectEnums(string extension, string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Declarations/Enums" + extension));
+        Assert.Contains(original, source);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source.Replace(original, replacement), language));
+        Assert.Contains(message, error.Message);
+        Assert.True(error.Line > 1);
+        Assert.True(error.Column > 0);
+    }
+
     // These non-canonical forms cannot be fixture pairs: emission normalizes lambdas,
     // parameterless Any(), and Sum() to the typed forms in ArrayQueries.
     [Fact]
@@ -936,7 +960,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(28, r.Count);
+        Assert.Equal(29, r.Count);
         return r;
     }
 

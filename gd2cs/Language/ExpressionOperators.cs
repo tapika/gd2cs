@@ -21,7 +21,7 @@ internal static class ExpressionOperators
 
     // Preserve the expression tree, including right-hand grouping and GDScript's low-precedence as casts.
     public static bool NeedsParentheses(Expression child, string parent, bool right, ScriptLanguage language) =>
-        language == ScriptLanguage.GdScript && child is VariantCastExpression
+        language == ScriptLanguage.GdScript && child is VariantCastExpression or ConversionExpression { Type.IsEnum: true }
         || child is BinaryExpression binary && (Precedence(binary.Operator, language) < Precedence(parent, language)
             || right && Precedence(binary.Operator, language) == Precedence(parent, language));
 

@@ -73,11 +73,14 @@ internal sealed class SemanticNormalizer
         userTypes.Add(declaration.Name);
         foreach (var nested in declaration.Elements.OfType<NestedClassDeclaration>())
             userTypes.Add(nested.Name);
+        foreach (var enumeration in declaration.Elements.OfType<EnumDeclaration>())
+            userTypes.Add(enumeration.Name);
+        var path = classPath ?? declaration.Name;
         // Bind declarations before constructing symbol tables, so receivers use CLR identities too.
         declaration = declaration with
         {
-            BaseType = NormalizeType(declaration.BaseType, userTypes),
-            Elements = declaration.Elements.Select(element => NormalizeDeclarationTypes(element, userTypes)).ToList()
+            BaseType = NormalizeType(declaration.BaseType, userTypes, path),
+            Elements = declaration.Elements.Select(element => NormalizeDeclarationTypes(element, userTypes, path)).ToList()
         };
         foreach (var element in declaration.Elements)
         {
@@ -148,27 +151,28 @@ internal sealed class SemanticNormalizer
     }
 
     // Canonicalize signatures before callable binding; nested classes bind independently.
-    private SyntaxElement NormalizeDeclarationTypes(SyntaxElement element, HashSet<string> userTypes) => element switch
+    private SyntaxElement NormalizeDeclarationTypes(SyntaxElement element, HashSet<string> userTypes, string context) => element switch
     {
-        FieldDeclaration field => field with { Type = NormalizeType(field.Type, userTypes) },
-        PropertyDeclaration property => property with { Type = NormalizeType(property.Type, userTypes) },
-        ConstantDeclaration constant => constant with { Type = NormalizeType(constant.Type, userTypes) },
+        FieldDeclaration field => field with { Type = NormalizeType(field.Type, userTypes, context) },
+        PropertyDeclaration property => property with { Type = NormalizeType(property.Type, userTypes, context) },
+        ConstantDeclaration constant => constant with { Type = NormalizeType(constant.Type, userTypes, context) },
         MethodDeclaration method => method with
         {
-            ReturnType = NormalizeType(method.ReturnType, userTypes),
-            Parameters = NormalizeParameterTypes(method.Parameters, userTypes)
+            ReturnType = NormalizeType(method.ReturnType, userTypes, context),
+            Parameters = NormalizeParameterTypes(method.Parameters, userTypes, context)
         },
-        ConstructorDeclaration constructor => constructor with { Parameters = NormalizeParameterTypes(constructor.Parameters, userTypes) },
-        SignalDeclaration signal => signal with { Parameters = NormalizeParameterTypes(signal.Parameters, userTypes) },
+        ConstructorDeclaration constructor => constructor with { Parameters = NormalizeParameterTypes(constructor.Parameters, userTypes, context) },
+        SignalDeclaration signal => signal with { Parameters = NormalizeParameterTypes(signal.Parameters, userTypes, context) },
         _ => element
     };
 
     // A Godot alias is bound only in type positions, never in identifiers, comments or strings.
-    private TypeReference NormalizeType(TypeReference type, HashSet<string> userTypes)
+    private TypeReference NormalizeType(TypeReference type, HashSet<string> userTypes, string context)
     {
         var name = type.Name;
         var native = type.GodotName;
-        if (!userTypes.Contains(name) && godotTypes.TryResolveTypeName(name, language, out var managed, out var godotName))
+        var isEnum = scriptTypes.IsEnum(name, context);
+        if (!isEnum && !userTypes.Contains(name) && godotTypes.TryResolveTypeName(name, language, out var managed, out var godotName))
         {
             name = managed;
             native = godotName == managed ? null : godotName;
@@ -177,21 +181,26 @@ internal sealed class SemanticNormalizer
         {
             Name = name,
             GodotName = native,
-            TypeArguments = type.TypeArguments.Select(argument => NormalizeType(argument, userTypes)).ToList()
+            IsEnum = isEnum,
+            TypeArguments = type.TypeArguments.Select(argument => NormalizeType(argument, userTypes, context)).ToList()
         });
     }
 
-    private ParameterList NormalizeParameterTypes(ParameterList parameters, HashSet<string> userTypes) => parameters with
+    private TypeReference NormalizeType(TypeReference type, BindingScope scope) =>
+        NormalizeType(type, scope.UserTypes, scope.ClassPath);
+
+    private ParameterList NormalizeParameterTypes(ParameterList parameters, HashSet<string> userTypes, string context) => parameters with
     {
         Parameters = parameters.Parameters.Select(parameter => parameter with
         {
-            Type = NormalizeType(parameter.Type, userTypes)
+            Type = NormalizeType(parameter.Type, userTypes, context)
         }).ToList()
     };
 
     // Recurses only into class elements that can contain expressions or nested scopes.
     private SyntaxElement NormalizeClassElement(SyntaxElement element, BindingScope scope) => element switch
     {
+        EnumDeclaration enumeration => EnumSemantics.Validate(enumeration),
         SignalDeclaration signal => signal with { Parameters = NormalizeParameters(signal.Parameters, scope) },
         ConstantDeclaration constant => NormalizeConstant(constant, scope),
         FieldDeclaration field => NormalizeField(field, scope),
@@ -252,7 +261,7 @@ internal sealed class SemanticNormalizer
         var type = language == ScriptLanguage.GdScript && constant.IsInferred
             ? ResolveType(value, scope) ?? constant.Type
             : constant.Type;
-        return constant with { Type = NormalizeType(type, scope.UserTypes), Value = value };
+        return constant with { Type = NormalizeType(type, scope), Value = value };
     }
 
     // C# declarations remain authoritative; only inferred GDScript fields adopt bound result types.
@@ -262,7 +271,12 @@ internal sealed class SemanticNormalizer
         var type = language == ScriptLanguage.GdScript && field.IsInferred
             ? ResolveType(initializer, scope) ?? field.Type
             : field.Type;
-        return field with { Type = NormalizeType(type, scope.UserTypes), Initializer = initializer };
+        return field with
+        {
+            Type = NormalizeType(type, scope),
+            Initializer = initializer,
+            IsInferred = type.IsEnum ? initializer is not null : field.IsInferred
+        };
     }
 
     // Reuses root-class binding so nested classes receive their own member namespace.
@@ -278,7 +292,7 @@ internal sealed class SemanticNormalizer
     {
         Parameters = parameters.Parameters.Select(parameter => parameter with
         {
-            Type = NormalizeType(parameter.Type, scope.UserTypes),
+            Type = NormalizeType(parameter.Type, scope),
             DefaultValue = NormalizeTypedValue(parameter.Type, parameter.DefaultValue, scope)
         }).ToList()
     };
@@ -289,6 +303,15 @@ internal sealed class SemanticNormalizer
     {
         if (value is null)
             return null;
+        // GD enums are integers; preserve their nominal C# type when an initializer is numeric.
+        if (type?.IsEnum == true)
+        {
+            if (value is ValueExpression { Text: "default" })
+                return new ConversionExpression(type, new ValueExpression("0"));
+            var enumValue = NormalizeExpression(value, scope);
+            return ResolveType(enumValue, scope)?.Kind == TypeKind.Int32
+                ? new ConversionExpression(type, enumValue) : enumValue;
+        }
         // Null containers cannot represent GDScript's non-null empty default.
         if (type?.Kind is TypeKind.Array or TypeKind.Dictionary
             && value is ValueExpression { Text: "null" or "default" })
@@ -324,7 +347,7 @@ internal sealed class SemanticNormalizer
         bool isStatic = false,
         TypeReference? returnType = null)
     {
-        parameters = NormalizeParameterTypes(parameters, scope.UserTypes);
+        parameters = NormalizeParameterTypes(parameters, scope.UserTypes, scope.ClassPath);
         var hadCurrentInstance = scope.HasCurrentInstance;
         var previousReturnType = scope.ReturnType;
         scope.ReturnType = returnType ?? new TypeReference("void");
@@ -409,8 +432,11 @@ internal sealed class SemanticNormalizer
     private LocalVariableStatement NormalizeLocal(LocalVariableStatement statement, BindingScope scope)
     {
         if (statement.Type is not null)
-            statement = statement with { Type = NormalizeType(statement.Type, scope.UserTypes) };
+            statement = statement with { Type = NormalizeType(statement.Type, scope) };
         var initializer = NormalizeTypedValue(statement.Type, statement.Initializer, scope);
+        // Enum locals are value types; fold the C# definite-assignment default back to GD's default.
+        if (statement.Type?.Kind == TypeKind.Enum && statement.Initializer is ValueExpression { Text: "default" })
+            initializer = null;
         // Typed GDScript locals start empty; CSharpParser already folds their emitted default initializer.
         if (initializer is TypeDefaultExpression && statement.Typing == LocalTyping.Explicit)
             initializer = null;
@@ -418,7 +444,7 @@ internal sealed class SemanticNormalizer
         if (type is not null)
         {
             var originalType = type;
-            type = NormalizeType(type, scope.UserTypes);
+            type = NormalizeType(type, scope);
             if (scope.UntypedMemberResults.Contains(originalType))
                 scope.UntypedMemberResults.Add(type);
         }
@@ -473,7 +499,7 @@ internal sealed class SemanticNormalizer
         if (collectionType?.Kind == TypeKind.Variant)
             throw SourceLocations.Error(statement.Collection,
                 "Variant collections require an explicit cast before iteration; use 'value as Array[ElementType]' (C#: 'value.As<Godot.Collections.Array<ElementType>>()').");
-        var explicitType = statement.VariableType is { } type ? NormalizeType(type, scope.UserTypes) : null;
+        var explicitType = statement.VariableType is { } type ? NormalizeType(type, scope) : null;
         var elementType = explicitType ?? collectionType?.TypeArguments.FirstOrDefault();
         scope.Push();
         try
@@ -597,7 +623,7 @@ internal sealed class SemanticNormalizer
         // A nested test still tests the original variable, not a C#-only alias.
         if (value is NarrowedValueExpression narrowed)
             value = narrowed.Value;
-        var test = expression with { Value = value, Type = NormalizeType(expression.Type, scope.UserTypes), PatternName = null };
+        var test = expression with { Value = value, Type = NormalizeType(expression.Type, scope), PatternName = null };
         scope.PatternNames[test] = expression.PatternName;
         return test;
     }
@@ -665,7 +691,7 @@ internal sealed class SemanticNormalizer
             LambdaExpression lambda => lambda with
             {
                 Parameters = NormalizeParameters(lambda.Parameters, scope),
-                ReturnType = NormalizeType(lambda.ReturnType, scope.UserTypes),
+                ReturnType = NormalizeType(lambda.ReturnType, scope),
                 Elements = NormalizeCallable(lambda.Parameters, lambda.Elements, scope, returnType: lambda.ReturnType)
             },
             CallableInvocationExpression callable => callable with
@@ -676,7 +702,7 @@ internal sealed class SemanticNormalizer
             CallableMethodGroupExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope),
-                ParameterTypes = callable.ParameterTypes.Select(type => NormalizeType(type, scope.UserTypes)).ToList()
+                ParameterTypes = callable.ParameterTypes.Select(type => NormalizeType(type, scope)).ToList()
             },
             CallableNullExpression callable => callable with
             {
@@ -694,7 +720,7 @@ internal sealed class SemanticNormalizer
             ObjectCreationExpression creation => NormalizeCreation(creation, scope),
             ConversionExpression conversion => conversion with
             {
-                Type = NormalizeType(conversion.Type, scope.UserTypes),
+                Type = NormalizeType(conversion.Type, scope),
                 Value = NormalizeExpression(conversion.Value, scope)
             },
             SafeCastExpression cast => NormalizeCast(cast.Type, cast.Value, scope),
@@ -765,7 +791,7 @@ internal sealed class SemanticNormalizer
     // Generated query materializers preserve GD's eager array semantics in C#.
     private Expression NormalizeCreation(ObjectCreationExpression creation, BindingScope scope)
     {
-        var type = NormalizeType(creation.Type, scope.UserTypes);
+        var type = NormalizeType(creation.Type, scope);
         var arguments = NormalizeArguments(creation.Arguments, scope);
         if (language == ScriptLanguage.CSharp && type.Kind == TypeKind.Array
             && arguments.Arguments.Count == 1
@@ -784,12 +810,14 @@ internal sealed class SemanticNormalizer
 
     private Expression NormalizeCast(TypeReference type, Expression value, BindingScope scope)
     {
-        type = NormalizeType(type, scope.UserTypes);
+        type = NormalizeType(type, scope);
         if (language == ScriptLanguage.CSharp && value is InvocationExpression invocation
             && invocation.Target is MemberAccessExpression { Member: "AsGodotObject" } extraction
             && invocation.Arguments.Arguments.Count == 0)
             value = extraction.Target;
         var normalized = NormalizeExpression(value, scope, allowVariantDictionaryRead: true);
+        if (type.IsEnum && ResolveType(normalized, scope)?.Kind != TypeKind.Variant)
+            return new ConversionExpression(type, normalized);
         // Explicit casts also authorize Callable results and locals whose declared type is Variant.
         if (!IsVariantDictionaryRead(normalized, scope) && ResolveType(normalized, scope)?.Kind != TypeKind.Variant)
             return new SafeCastExpression(type, normalized);
@@ -813,7 +841,7 @@ internal sealed class SemanticNormalizer
     private DictionaryExpression NormalizeDictionary(DictionaryExpression dictionary, BindingScope scope)
     {
         if (dictionary.Type is not null)
-            dictionary = dictionary with { Type = NormalizeType(dictionary.Type, scope.UserTypes) };
+            dictionary = dictionary with { Type = NormalizeType(dictionary.Type, scope) };
         if (dictionary.Type?.Kind != TypeKind.Dictionary || dictionary.Type.TypeArguments.Count != 2)
             throw SourceLocations.Error(dictionary, "Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.");
         return dictionary with
@@ -903,11 +931,11 @@ internal sealed class SemanticNormalizer
         if (language == ScriptLanguage.GdScript &&
             target is ValueExpression typeName &&
             scope.Resolve(typeName.Text) is null && !scope.IsUserMethod(typeName.Text) && !scope.UserTypes.Contains(typeName.Text) &&
-            godotTypes.IsBuiltInValueConstructor(NormalizeType(new TypeReference(typeName.Text), scope.UserTypes).Name,
+            godotTypes.IsBuiltInValueConstructor(NormalizeType(new TypeReference(typeName.Text), scope).Name,
                 arguments.Arguments.Count))
         {
             return new ObjectCreationExpression(
-                NormalizeType(new TypeReference(typeName.Text), scope.UserTypes),
+                NormalizeType(new TypeReference(typeName.Text), scope),
                 arguments,
                 ConstructionKind.BuiltInValue);
         }
@@ -1163,7 +1191,7 @@ internal sealed class SemanticNormalizer
             if (parameters[index].DefaultValue is not null)
                 throw SourceLocations.Error(invocation, "Array query lambda parameters cannot have default values.");
             if (parameters[index].Type.Name.Length > 0
-                && !SameHandlerType(NormalizeType(parameters[index].Type, scope.UserTypes), expectedTypes[index]))
+                && !SameHandlerType(NormalizeType(parameters[index].Type, scope), expectedTypes[index]))
                 throw SourceLocations.Error(invocation, "Array query lambda parameter types must match the collection and seed.");
             parameters[index] = parameters[index] with { Type = expectedTypes[index] };
         }
@@ -1257,7 +1285,7 @@ internal sealed class SemanticNormalizer
             }
             if (lambda.ReturnType.Kind != TypeKind.Bool || lambda.Parameters.Parameters.Count != 2
                 || lambda.Parameters.Parameters.Any(parameter => parameter.DefaultValue is not null
-                    || !SameHandlerType(NormalizeType(parameter.Type, scope.UserTypes), elementType)))
+                    || !SameHandlerType(NormalizeType(parameter.Type, scope), elementType)))
                 throw SourceLocations.Error(invocation, "Sort comparator must take two array-element parameters and return bool.");
             predicate = NormalizeExpression(lambda, scope);
         }
@@ -1660,8 +1688,12 @@ internal sealed class SemanticNormalizer
         if (language == ScriptLanguage.GdScript && receiverType?.Kind == TypeKind.Dictionary)
             return SourceLocations.Copy(member, new IndexExpression(target, new ValueExpression("\"" + member.Member + "\"")));
         // A script field supplies its result type without becoming a reflected/renamed member.
-        if (scope.ResolveMember(member with { Target = target }) is not null)
-            return member with { Target = target };
+        if (scope.ResolveMember(member with { Target = target }) is { } scriptType)
+            return scope.StaticReceiver(target)?.IsEnum == true
+                ? new ScriptEnumExpression(target, member.Member, scriptType)
+                : member with { Target = target };
+        if (scope.StaticReceiver(target)?.IsEnum == true)
+            throw SourceLocations.Error(member, $"Unknown enum member '{member.Member}'; enum dictionary APIs are not supported.");
         if (language == ScriptLanguage.CSharp &&
             receiverType is not null &&
             CollectionMappings.TryCSharpProperty(receiverType.Kind, member.Member, out var operation))
@@ -1741,7 +1773,7 @@ internal sealed class SemanticNormalizer
         {
             result = new GodotStaticMemberExpression(reference with
             {
-                ResultType = NormalizeType(reference.ResultType, scope.UserTypes)
+                ResultType = NormalizeType(reference.ResultType, scope)
             });
             return true;
         }
@@ -1875,6 +1907,7 @@ internal sealed class SemanticNormalizer
         GodotMemberAccessExpression member => member.Member.ResultType,
         GodotStaticMemberExpression member => member.Member.ResultType,
         GodotEnumExpression constant => new TypeReference(constant.Constant.EnumType),
+        ScriptEnumExpression constant => constant.Type,
         CollectionOperationExpression collection => CollectionMappings.ResultType(collection.Operation, ResolveType(collection.Target, scope)),
         ParenthesizedExpression parenthesized => ResolveType(parenthesized.Expression, scope),
         _ => null
@@ -1965,7 +1998,7 @@ internal sealed class SemanticNormalizer
         public TypeReference? ResolveMember(MemberAccessExpression member)
         {
             var receiver = member.Target is CurrentInstanceExpression ? new TypeReference(ClassPath)
-                : ResolveType(member.Target, this) ?? StaticReceiver(member.Target);
+                : StaticReceiver(member.Target) ?? ResolveType(member.Target, this);
             return ScriptTypes.ResolveMember(receiver, member.Member, ClassPath);
         }
 
@@ -1978,7 +2011,8 @@ internal sealed class SemanticNormalizer
             if (root is not ValueExpression value || Resolve(value.Text) is not null || IsUserMethod(value.Text))
                 return null;
             var name = ReceiverName(expression);
-            return ScriptTypes.IsClass(name, ClassPath) ? new TypeReference(name) : null;
+            return ScriptTypes.IsClass(name, ClassPath) || ScriptTypes.IsEnum(name, ClassPath)
+                ? new TypeReference(name, [], IsEnum: ScriptTypes.IsEnum(name, ClassPath)) : null;
         }
 
         /* Ordinary invocations keep their source shape in the model. Bind their result from
