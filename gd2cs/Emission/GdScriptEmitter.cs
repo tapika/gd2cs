@@ -244,16 +244,26 @@ public sealed class GdScriptEmitter : IScriptEmitter
             output.Append(indent);
     }
 
-    // End-of-line hints describe either the plain array element or its nested dictionary schema.
+    // End-of-line hints retain element types hidden from Godot's nested collection grammar.
     private static bool UsesArrayHint(TypeReference type) => type.Kind == TypeKind.Array
         && type.TypeArguments.Count == 1 && type.TypeArguments[0].Name.Contains('.');
 
+    private static bool UsesDictionaryArrayHint(TypeReference type) => type.Kind == TypeKind.Dictionary
+        && type.TypeArguments.Count == 2 && type.TypeArguments[1].Kind == TypeKind.Array
+        && type.TypeArguments[1].TypeArguments.Count == 1;
+
     private static void EmitTemplateHint(StringBuilder output, TypeReference type)
     {
-        if (type.Kind != TypeKind.Array || type.TypeArguments.Count != 1)
-            return;
-        var arguments = UsesArrayHint(type) ? type.TypeArguments
-            : type.TypeArguments[0].Kind == TypeKind.Dictionary ? type.TypeArguments[0].TypeArguments : null;
+        List<TypeReference>? arguments = null;
+        if (UsesDictionaryArrayHint(type))
+            arguments = type.TypeArguments[1].TypeArguments;
+        else if (type.Kind == TypeKind.Array && type.TypeArguments.Count == 1)
+        {
+            if (UsesArrayHint(type))
+                arguments = type.TypeArguments;
+            else if (type.TypeArguments[0].Kind == TypeKind.Dictionary)
+                arguments = type.TypeArguments[0].TypeArguments;
+        }
         if (arguments is null)
             return;
         output.Append(" #[");
@@ -267,7 +277,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
     }
 
     private static void EmitType(StringBuilder output, TypeReference type, bool omitNestedDictionaryTypes = false,
-        bool omitQualifiedArrayElement = false)
+        bool useTrailingHints = false)
     {
         if (type.Kind == TypeKind.ArrayBuffer)
         {
@@ -281,7 +291,7 @@ public sealed class GdScriptEmitter : IScriptEmitter
             TypeKind.Float64 => "float",
             _ => type.GodotName ?? type.Name
         });
-        if (type.TypeArguments.Count == 0 || omitQualifiedArrayElement && UsesArrayHint(type))
+        if (type.TypeArguments.Count == 0 || useTrailingHints && UsesArrayHint(type))
             return;
         output.Append('[');
         for (var index = 0; index < type.TypeArguments.Count; index++)
@@ -291,6 +301,8 @@ public sealed class GdScriptEmitter : IScriptEmitter
             var argument = type.TypeArguments[index];
             if (omitNestedDictionaryTypes && type.Kind == TypeKind.Array && argument.Kind == TypeKind.Dictionary)
                 output.Append("Dictionary");
+            else if (omitNestedDictionaryTypes && useTrailingHints && UsesDictionaryArrayHint(type) && index == 1)
+                output.Append("Array");
             else
                 EmitType(output, argument);
         }
@@ -307,8 +319,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
             SafeCastExpression cast => (cast.Type, cast.Value),
             _ => ((TypeReference?)null, (Expression?)null)
         };
-        if (type?.Kind == TypeKind.Array && type.TypeArguments.Count == 1
-            && (type.TypeArguments[0].Kind == TypeKind.Dictionary || UsesArrayHint(type)))
+        if (type is not null && (UsesDictionaryArrayHint(type)
+            || type.Kind == TypeKind.Array && type.TypeArguments.Count == 1
+                && (type.TypeArguments[0].Kind == TypeKind.Dictionary || UsesArrayHint(type))))
         {
             EmitExpression(output, value!, indent);
             output.Append(" as ");

@@ -941,6 +941,23 @@ public sealed class TranspilerTests
         }
     }
 
+    [Theory]
+    [InlineData("", "Dictionary array values require an element type hint;")]
+    [InlineData("# ordinary comment", "Dictionary array values require an element type hint;")]
+    [InlineData("#[float, int]", "Invalid array type hint:")]
+    [InlineData("#[]", "Invalid array type hint:")]
+    [InlineData("#[float] trailing", "Invalid array type hint:")]
+    [InlineData("#[Dictionary]", "Invalid array type hint:")]
+    public void RejectDictionaryArrayHints(string hint, string message)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Collections/DictionaryArrayValues.gd"))
+            .Replace("Dictionary[Vector2, Array] #[float]", "Dictionary[Vector2, Array] " + hint);
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, Language.ScriptLanguage.GdScript));
+        Assert.StartsWith(message, error.Message);
+        Assert.Equal(5, error.Line);
+        Assert.True(error.Column > 0);
+    }
+
     public static IEnumerable<object[]> ScriptPairs()
     {
         foreach (var pair in DiscoverScriptPairs())
@@ -960,7 +977,7 @@ public sealed class TranspilerTests
         }
         var r = pairs.Order(StringComparer.Ordinal).ToList();
         // Just make sure that we won't accidentally remove a script.
-        Assert.Equal(29, r.Count);
+        Assert.Equal(30, r.Count);
         return r;
     }
 

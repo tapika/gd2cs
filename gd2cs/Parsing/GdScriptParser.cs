@@ -395,7 +395,7 @@ public sealed class GdScriptParser : IScriptParser
         _ => new TypeReference("Variant")
     };
 
-    // Trailing hints retain schemas Godot cannot nest in Array[]; return hints follow the body colon.
+    // Trailing hints retain nested collection schemas; return hints follow the body colon.
     private TypeReference ParseHintedType(bool expectBodyColon = false)
     {
         var opening = tokens.Current;
@@ -440,6 +440,15 @@ public sealed class GdScriptParser : IScriptParser
                 || !tokens.Current.Text.StartsWith('['))
                 throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);
             arguments[0] = ParseTemplateHint("Dictionary", 2);
+        }
+        // Dictionary values can be arrays, but Godot cannot nest their element annotation.
+        if (name == "Dictionary" && arguments.Count == 2
+            && arguments[1].Kind == TypeKind.Array && arguments[1].TypeArguments.Count == 0)
+        {
+            if (!allowTemplateHint || tokens.Current.Kind != TokenKind.Comment
+                || !tokens.Current.Text.StartsWith('['))
+                throw new ParseException("Dictionary array values require an element type hint; use Dictionary[KeyType, Array] #[ElementType].", typeToken.Line, typeToken.Column);
+            arguments[1] = ParseTemplateHint("Array", 1);
         }
         if (name == "Dictionary" && arguments.Count != 2 && !(allowTemplateHint && arguments.Count == 0))
             throw new ParseException("Untyped dictionaries are not supported; specify Dictionary[KeyType, ValueType] or use a class for mixed fields.", typeToken.Line, typeToken.Column);

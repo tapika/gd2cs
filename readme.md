@@ -237,6 +237,14 @@ var entries : Array[Dictionary] #[String, Node3D]
 
 gd2cs reads this as `Array[Dictionary[String, Node3D]]` and emits C# `Godot.Collections.Array<Godot.Collections.Dictionary<string, Node3D>>`. Backtranslation reconstructs the hint. Both forms work on fields and locals. Godot treats hints as comments and does not enforce the hinted element/key/value types; hints do not convert or retype existing collections. Ordinary comments are not hints: the brackets are required. Without its hint, `Array[Dictionary]` remains rejected. Mixed node and vector values require a `Variant` value type, not `Node3D`.
 
+For a dictionary whose values are arrays, the hint supplies the value array's element type:
+
+```gdscript
+var groups : Dictionary[Vector2, Array] #[float]
+```
+
+gd2cs emits `Godot.Collections.Dictionary<Vector2, Godot.Collections.Array<float>>` and restores the hint on backtranslation. Use declarations without initializers, then assign separately if needed. The same hint works on return types and standalone local casts.
+
 Hints also work on a local's collection cast, for example `var entries := callback.call() as Array[Dictionary] #[String, Variant]`. Store the cast in a local before iterating it. A raw `Variant` (including `Callable.call()` results) cannot be iterated: cast it to `Array[ElementType]` first. Iterator annotations such as `for entry: Dictionary[String, Variant] in entries:` map to explicitly typed C# `foreach`; omitted annotations map to `foreach (var entry in entries)`. An iterator annotation alone does not cast a Variant collection.
 
 ### Reading Variant dictionary values
