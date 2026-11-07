@@ -51,6 +51,27 @@ This adds an idempotent target to the generated or existing `.csproj`. After eac
 
 This way it's possible to observe that you will not break `.gd` script due to `gd2cs` non-supported C# languages features.
 
+## Example AI prompt: C# changes for web export
+
+```text
+Copy C# changes from <source Godot project> to <target Godot project>,
+keeping both C# and generated GDScript functional. This is for Godot web
+export, which requires .gd scripts instead of C#.
+
+Read gd2cs/readme.md and the examples in gd2cs/scripts. Transfer one logical
+change at a time, simplifying unsupported C# syntax without changing behavior.
+Put new scripts in scripts/<Name>-cs/ and scripts/<Name>-gd/. Update the
+.csproj to backtranslate all migrated scripts after each C# build.
+
+Compile C#, transpile to GDScript, and test both versions in Godot.
+If unsupported syntax has no clear C# workaround, report the error and
+leave that change uncommitted.
+
+Commit validated changes locally without pushing, using at most eight
+commits, preferably one per logical change. Commit only .cs, .gd, and
+translations.csv; exclude main.gd and leave all other files uncommitted.
+```
+
 ## Gd / C# interoperability gotchas
 
 ### Instantiating a loaded C# script
