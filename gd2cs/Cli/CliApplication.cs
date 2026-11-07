@@ -160,9 +160,9 @@ public static class CliApplication
                 var sourcePath = paths.Source;
                 var targetPath = paths.Target;
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                transpiler.TranspileFile(sourcePath, targetPath);
+                var updated = transpiler.TranspileFile(sourcePath, targetPath);
                 conversions.Add((outputLanguage, sourcePath, targetPath, paths.IsPaired));
-                Console.WriteLine($"Converted from {Path.GetFileName(sourcePath)} to {Path.GetFileName(targetPath)}");
+                Console.WriteLine($"{Path.GetFileName(targetPath)}: {(updated ? "updated" : "up-to-date")}");
             }
         }
 

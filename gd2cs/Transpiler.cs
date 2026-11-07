@@ -34,7 +34,8 @@ public sealed class Transpiler
         return PreserveFormatting(source, generated);
     }
 
-    public void TranspileFile(string sourcePath, string targetPath)
+    // Returns whether the destination was written; unchanged files retain their timestamps.
+    public bool TranspileFile(string sourcePath, string targetPath)
     {
         var sourceLanguage = LanguageFromExtension(sourcePath);
         var targetLanguage = LanguageFromExtension(targetPath);
@@ -58,7 +59,13 @@ public sealed class Transpiler
         try
         {
             var output = Transpile(source, sourceLanguage, targetLanguage);
-            File.WriteAllText(targetPath, output, new UTF8Encoding(hasPreamble));
+            var encoded = Encoding.UTF8.GetBytes(output);
+            // Compare the actual saved bytes, including BOM and line endings, not decoded text.
+            byte[] outputBytes = hasPreamble ? [.. preamble, .. encoded] : encoded;
+            if (File.Exists(targetPath) && File.ReadAllBytes(targetPath).AsSpan().SequenceEqual(outputBytes))
+                return false;
+            File.WriteAllBytes(targetPath, outputBytes);
+            return true;
         }
         catch (ParseException exception)
         {

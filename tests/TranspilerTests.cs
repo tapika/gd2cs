@@ -30,6 +30,48 @@ public sealed class TranspilerTests
         }
     }
 
+    [Theory]
+    [InlineData(".gd", ".cs", false)]
+    [InlineData(".gd", ".cs", true)]
+    [InlineData(".cs", ".gd", false)]
+    [InlineData(".cs", ".gd", true)]
+    public void FileUpdates(string sourceExtension, string targetExtension, bool withBom)
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"gd2cs-{Guid.NewGuid():N}{sourceExtension}");
+        var targetPath = Path.ChangeExtension(sourcePath, targetExtension);
+        var source = File.ReadAllText(Fixture("Classes/TestClass" + sourceExtension));
+        var transpiler = new Transpiler();
+        try
+        {
+            File.WriteAllText(sourcePath, source, new UTF8Encoding(withBom));
+            Assert.True(transpiler.TranspileFile(sourcePath, targetPath));
+            Assert.Equal(File.ReadAllText(Fixture("Classes/TestClass" + targetExtension)), File.ReadAllText(targetPath));
+
+            // A sentinel timestamp detects rewrites without sleeping or depending on clock resolution.
+            File.SetLastWriteTimeUtc(targetPath, new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            var timestamp = File.GetLastWriteTimeUtc(targetPath);
+            Assert.False(transpiler.TranspileFile(sourcePath, targetPath));
+            Assert.Equal(timestamp, File.GetLastWriteTimeUtc(targetPath));
+
+            source = source.Replace("TestClass", "UpdatedClass");
+            File.WriteAllText(sourcePath, source, new UTF8Encoding(withBom));
+            Assert.True(transpiler.TranspileFile(sourcePath, targetPath));
+            Assert.Equal(File.ReadAllText(Fixture("Classes/TestClass" + targetExtension)).Replace("TestClass", "UpdatedClass"),
+                File.ReadAllText(targetPath));
+
+            // Encoding-only changes must still update the output, even when the decoded text matches.
+            File.WriteAllText(sourcePath, source, new UTF8Encoding(!withBom));
+            Assert.True(transpiler.TranspileFile(sourcePath, targetPath));
+            Assert.Equal(!withBom, File.ReadAllBytes(targetPath).AsSpan().StartsWith(Encoding.UTF8.Preamble));
+            Assert.False(transpiler.TranspileFile(sourcePath, targetPath));
+        }
+        finally
+        {
+            File.Delete(sourcePath);
+            File.Delete(targetPath);
+        }
+    }
+
     [Fact]
     public void LineEndingStyleIsPreserved()
     {
