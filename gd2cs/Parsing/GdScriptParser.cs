@@ -173,7 +173,7 @@ public sealed class GdScriptParser : IScriptParser
             }
             if (tokens.Current.Text == "if")
             {
-                elements.Add(ParseConditional(statementColumn));
+                elements.Add(SourceLocations.Record(ParseConditional(statementColumn), statementToken));
                 continue;
             }
             if (tokens.TryConsume(TokenKind.Identifier, "break"))

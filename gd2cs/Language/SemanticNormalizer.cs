@@ -399,8 +399,10 @@ internal sealed class SemanticNormalizer
         },
         LocalVariableStatement statement => NormalizeLocal(statement, scope),
         ForEachStatement statement => NormalizeForEach(statement, scope),
+        CounterLoopStatement statement => NormalizeCounterLoop(statement, scope),
         WhileStatement statement => NormalizeWhile(statement, scope),
-        ConditionalStatement statement => NormalizeConditional(statement, scope),
+        ConditionalStatement statement => language == ScriptLanguage.GdScript && ForLoopLowering.TryFold(statement, out var loop)
+            ? NormalizeCounterLoop(loop, scope) : NormalizeConditional(statement, scope),
         _ => element
     };
 
@@ -553,6 +555,41 @@ internal sealed class SemanticNormalizer
             {
                 Branches = branches,
                 ElseElements = statement.ElseElements is null ? null : NormalizeNestedBody(statement.ElseElements, scope)
+            };
+        }
+        finally
+        {
+            scope.Pop();
+        }
+    }
+
+    // The initializer lives through condition, update, and body, but not after the loop.
+    private CounterLoopStatement NormalizeCounterLoop(CounterLoopStatement statement, BindingScope scope)
+    {
+        if (ForLoopLowering.HasUpdateShadowing(statement))
+            throw SourceLocations.Error(statement,
+                "For-loop updates must qualify class members with this/self when body locals shadow their names.");
+        scope.Push();
+        try
+        {
+            var initializer = (Statement)NormalizeBodyElement(statement.Initializer, scope);
+            if (initializer is LocalVariableStatement local)
+                scope.Declare(local.Name, local.Type ?? new TypeReference(""));
+            var counter = ForLoopLowering.CounterName(initializer);
+            if (scope.Resolve(counter)?.Kind != TypeKind.Int32 || !scope.IsLocalName(counter))
+                throw SourceLocations.Error(statement, "For loops require an int local or parameter counter.");
+            var condition = NormalizeBoolean(statement.Condition, scope);
+            if (ResolveType(condition, scope)?.Kind != TypeKind.Bool)
+                throw SourceLocations.Error(statement, "For-loop conditions require a bool expression.");
+            var iterator = (AssignmentStatement)NormalizeAssignment(statement.Iterator, scope);
+            if (ResolveType(iterator.Value, scope)?.Kind != TypeKind.Int32)
+                throw SourceLocations.Error(statement, "For-loop steps require an int expression.");
+            return statement with
+            {
+                Initializer = initializer,
+                Condition = condition,
+                Iterator = iterator,
+                Elements = UnderCondition(condition, true, scope, () => NormalizeNestedBody(statement.Elements, scope))
             };
         }
         finally

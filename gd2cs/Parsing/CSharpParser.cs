@@ -333,6 +333,11 @@ public sealed class CSharpParser : IScriptParser
                 elements.Add(ParseForEach());
                 continue;
             }
+            if (tokens.Current.Text == "for")
+            {
+                elements.Add(ParseFor());
+                continue;
+            }
             if (tokens.Current.Text == "while")
             {
                 elements.Add(ParseWhile());
@@ -405,6 +410,62 @@ public sealed class CSharpParser : IScriptParser
             elements.Add(new ExpressionStatement(expression));
         }
         return elements;
+    }
+
+    // Counter headers share expressions and assignments with ordinary statements, but
+    // increment syntax has no expression value here: it becomes an additive assignment.
+    private CounterLoopStatement ParseFor()
+    {
+        var opening = tokens.Expect(TokenKind.Identifier, "for");
+        tokens.Expect(TokenKind.OpenParenthesis);
+        Statement initializer;
+        string name;
+        if (IsLocalDeclaration())
+        {
+            var inferred = tokens.TryConsume(TokenKind.Identifier, "var");
+            var type = inferred ? null : ParseType();
+            name = tokens.Expect(TokenKind.Identifier).Text;
+            tokens.Expect(TokenKind.Equals);
+            initializer = new LocalVariableStatement(name, type, ParseExpression(),
+                inferred ? LocalTyping.Inferred : LocalTyping.Explicit);
+        }
+        else
+        {
+            name = tokens.Expect(TokenKind.Identifier).Text;
+            tokens.Expect(TokenKind.Equals);
+            initializer = new AssignmentStatement(new ValueExpression(name), ParseExpression());
+        }
+        tokens.Expect(TokenKind.Semicolon);
+        var condition = tokens.Current.Kind == TokenKind.Semicolon ? new ValueExpression("true") : ParseExpression();
+        tokens.Expect(TokenKind.Semicolon);
+        var iterator = ParseForIterator(name);
+        tokens.Expect(TokenKind.CloseParenthesis);
+        return SourceLocations.Record(new CounterLoopStatement(initializer, condition, iterator, ParseBracedBody()), opening);
+    }
+
+    private AssignmentStatement ParseForIterator(string name)
+    {
+        var opening = tokens.Current;
+        var prefix = tokens.TryConsume(TokenKind.PlusPlus) ? "+="
+            : tokens.TryConsume(TokenKind.MinusMinus) ? "-=" : null;
+        tokens.Expect(TokenKind.Identifier, name);
+        var operation = prefix ?? (tokens.TryConsume(TokenKind.PlusPlus) ? "+="
+            : tokens.TryConsume(TokenKind.MinusMinus) ? "-=" : null);
+        if (operation is not null)
+            return new AssignmentStatement(new ValueExpression(name), new ValueExpression("1"), operation);
+        if (!tokens.TryConsumeAssignment(out operation))
+            throw new ParseException("For loops require one counter update: ++, --, += or -=.", opening.Line, opening.Column);
+        var value = ParseExpression();
+        if (operation == "=" && value is BinaryExpression { Left: ValueExpression left, Operator: "+" or "-" } binary
+            && left.Text == name)
+        {
+            operation = binary.Operator == "+" ? "+=" : "-=";
+            value = binary.Right;
+        }
+        if (operation is not ("+=" or "-="))
+            throw new ParseException("For loops require an additive counter update (++/--, +=/-=, or counter = counter +/- step).",
+                opening.Line, opening.Column);
+        return new AssignmentStatement(new ValueExpression(name), value, operation);
     }
 
     private ForEachStatement ParseForEach()

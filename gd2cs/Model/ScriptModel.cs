@@ -499,6 +499,11 @@ public sealed record ForEachStatement(
     TypeReference? VariableType = null,
     bool IteratesDictionaryKeys = false) : Statement;
 
+// C# counter loops retain a single initializer and additive update. GD lowers these into
+// a scoped while loop; the condition and update are evaluated again on every iteration.
+public sealed record CounterLoopStatement(Statement Initializer, Expression Condition,
+    AssignmentStatement Iterator, List<SyntaxElement> Elements) : Statement;
+
 // Repeats an ordered body while its condition remains true.
 public sealed record WhileStatement(
     Expression Condition,

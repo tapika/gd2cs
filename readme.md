@@ -177,6 +177,12 @@ GDScript has no C# access modifiers. Classes and members translated by gd2cs mus
 
 Functions returning a value must declare a return type (`-> Type` in GDScript). gd2cs treats an omitted return annotation as `void` and reports an error at any value-returning `return`. Bare `return` remains supported in void functions.
 
+### Counter loops
+
+C# `for (int index = 0; index < values.Count; index++)` and similar loops with one `int` local or parameter counter are supported. Initializers can declare `int`/`var` or assign an existing counter; updates support prefix/postfix `++`/`--`, `+=`/`-=`, and `counter = counter +/- step`. GDScript output uses an `if true` scope containing the initializer and a `while` loop, so conditions are rechecked each iteration rather than captured by `range()`. Updates run before the loop's own `continue` statements and at normal iteration end, but not on `break` or `return`. The equivalent GDScript form translates back to C# `for`. Qualify member references in updates with `this`/`self` when body locals shadow their names. Multiple counters and non-additive updates are not supported.
+
+GDScript also allows `for index in values.size():`, equivalent to `range(values.size())`, but captures the size once. C# rechecks `values.Count` each iteration, and changing the counter inside the body affects subsequent iterations. The compact form is equivalent only when the size stays unchanged and the body does not modify the counter; gd2cs uses `while` to preserve the general behavior.
+
 ### Membership operator
 
 GDScript membership expressions such as `value in values` are not supported. Use `values.has(value)` instead: arrays translate to C# `Contains(value)`, dictionaries to `ContainsKey(value)`. For example, `[1, 2, 3].has(value)` replaces `value in [1, 2, 3]`. Negate `.has()` with `not` when needed. This restriction does not affect `for value in values` loops.

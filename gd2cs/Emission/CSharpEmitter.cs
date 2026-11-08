@@ -967,6 +967,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                     output.AppendLine(")");
                     EmitBlock(output, statement.Elements, indent);
                     break;
+                case CounterLoopStatement statement:
+                    EmitFor(output, statement, indent);
+                    break;
                 case ConditionalStatement statement:
                     EmitConditional(output, statement, indent);
                     break;
@@ -980,6 +983,45 @@ public sealed class CSharpEmitter : IScriptEmitter
                     throw new NotSupportedException("Unsupported language dialect.");
             }
         }
+    }
+
+    private void EmitFor(StringBuilder output, CounterLoopStatement statement, string indent)
+    {
+        output.Append(indent + "for (");
+        if (statement.Initializer is LocalVariableStatement local)
+        {
+            if (local.Typing == LocalTyping.Explicit)
+                EmitType(output, local.Type!);
+            else
+                output.Append("var");
+            output.Append(' ');
+            output.Append(local.Name);
+            output.Append(" = ");
+            EmitExpression(output, local.Initializer ?? new ValueExpression("0"), indent);
+        }
+        else if (statement.Initializer is AssignmentStatement assignment)
+        {
+            EmitExpression(output, assignment.Target, indent);
+            output.Append(" = ");
+            EmitExpression(output, assignment.Value, indent);
+        }
+        else
+            throw new NotSupportedException("Unsupported language dialect.");
+        output.Append("; ");
+        EmitExpression(output, statement.Condition, indent);
+        output.Append("; ");
+        EmitExpression(output, statement.Iterator.Target, indent);
+        if (statement.Iterator.Value is ValueExpression { Text: "1" })
+            output.Append(statement.Iterator.Operator == "+=" ? "++" : "--");
+        else
+        {
+            output.Append(' ');
+            output.Append(statement.Iterator.Operator);
+            output.Append(' ');
+            EmitExpression(output, statement.Iterator.Value, indent);
+        }
+        output.AppendLine(")");
+        EmitBlock(output, statement.Elements, indent);
     }
 
     // GDScript initializes typed locals immediately, while C# requires definite assignment before reads.

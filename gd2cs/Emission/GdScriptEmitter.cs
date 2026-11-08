@@ -410,6 +410,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     output.AppendLine(":");
                     EmitBody(output, statement.Elements, indent + "\t");
                     break;
+                case CounterLoopStatement statement:
+                    EmitBody(output, ForLoopLowering.ForGdScript(statement), indent);
+                    break;
                 case ConditionalStatement statement:
                     EmitConditional(output, statement, indent);
                     break;
