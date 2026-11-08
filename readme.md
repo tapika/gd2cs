@@ -360,3 +360,10 @@ void func(string? s = null)
 ```
 
 Gd script does not supports that one, so `gd2cs` does not support this C# feature. Support can be added if a corresponding feature is added to GDScript.
+
+### JavaScript objects
+
+Known `JavaScriptObject` receivers support dynamic property reads/writes and method calls. GDScript `browser.width`, `browser.width = value`, and `browser.focus()` map to C# `browser.Get("width")`, `browser.Set("width", value)`, and `browser.Call("focus")`. Names retain their exact case; computed property names use bracket syntax in GDScript.
+
+Dynamic reads and call results are `Variant`, not guessed types. Cast each consumed result explicitly, for example `var width := browser.width as float` or `var element := browser.querySelector("canvas") as JavaScriptObject`. These emit `.As<float>()` and `.AsGodotObject() as JavaScriptObject` respectively. A typed destination alone does not replace the cast. Discarded calls need no cast; ordinary reflected Godot methods retain their declared return types. JavaScript execution remains web-only.
+

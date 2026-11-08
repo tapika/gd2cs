@@ -15,6 +15,7 @@ public sealed class GodotTypeNames
     {
         var names = new GodotTypeNames();
         names.Add("AABB", "Aabb");
+        names.Add("JavaScriptObject", "JavaScriptObject");
         return names;
     }
 

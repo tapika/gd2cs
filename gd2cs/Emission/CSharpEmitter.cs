@@ -363,6 +363,16 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitInvocationTarget(output, invocation.Target, indent);
                 EmitArguments(output, invocation.Arguments, indent);
                 break;
+            case JavaScriptPropertyExpression property:
+                EmitExpression(output, property.Target, indent);
+                output.Append(".Get");
+                EmitArguments(output, new ArgumentList([new(property.Name, false)], false), indent);
+                break;
+            case JavaScriptInvocationExpression javaScript:
+                EmitExpression(output, javaScript.Target, indent);
+                output.Append(".Call");
+                EmitArguments(output, JavaScriptOperations.WithName(javaScript.Name, javaScript.Arguments), indent);
+                break;
             case ClampExpression clamp:
                 output.Append(MathFunctionNames.ToCSharp("clamp"));
                 EmitArguments(output, clamp.Arguments, indent);
@@ -902,6 +912,14 @@ public sealed class CSharpEmitter : IScriptEmitter
                     break;
                 case BlankLineElement:
                     output.AppendLine();
+                    break;
+                // JavaScript writes use Godot's bridge API, not a CLR property invented from its name.
+                case AssignmentStatement { Target: JavaScriptPropertyExpression property } statement:
+                    output.Append(indent);
+                    EmitExpression(output, property.Target, indent);
+                    output.Append(".Set");
+                    EmitArguments(output, new ArgumentList([new(property.Name, false), new(statement.Value, false)], false), indent);
+                    output.AppendLine(";");
                     break;
                 case AssignmentStatement statement:
                     output.Append(indent);

@@ -234,12 +234,14 @@ public sealed class GodotTypeCatalog
             KnownMethod("Vector2", "Vector2", "DistanceTo", "distance_to", 1, 1, "float"),
             KnownMethod("Node3D", "GodotObject", "Tr", "tr", 1, 2, "string"),
             KnownMethod("RefCounted", "GodotObject", "Tr", "tr", 1, 2, "string"),
-            KnownMethod("RefCounted", "GodotObject", "ToString", "to_string", 0, 0, "string")
+            KnownMethod("RefCounted", "GodotObject", "ToString", "to_string", 0, 0, "string"),
+            KnownMethod("JavaScriptObject", "GodotObject", "ToString", "to_string", 0, 0, "string")
         ],
         [
             KnownGlobalFunction("TranslationServer", "SetLocale", "set_locale", 1, 1, "void"),
             KnownGlobalFunction("TranslationServer", "GetLocale", "get_locale", 0, 0, "string"),
-            KnownGlobalFunction("OS", "GetName", "get_name", 0, 0, "string")
+            KnownGlobalFunction("OS", "GetName", "get_name", 0, 0, "string"),
+            KnownGlobalFunction("JavaScriptBridge", "GetInterface", "get_interface", 1, 1, "JavaScriptObject")
         ],
         [
             new("Button", "BaseButton", "Pressed", "pressed", new List<TypeReference>()),

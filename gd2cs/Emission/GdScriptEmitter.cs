@@ -365,7 +365,15 @@ public sealed class GdScriptEmitter : IScriptEmitter
                     break;
                 case ExpressionStatement statement:
                     output.Append(indent);
-                    EmitExpression(output, statement.Expression, indent);
+                    // A discarded bridge read must remain a call: bare property statements are not valid GD.
+                    if (statement.Expression is JavaScriptPropertyExpression property)
+                    {
+                        EmitExpression(output, property.Target, indent);
+                        output.Append(".get");
+                        EmitArguments(output, new ArgumentList([new(property.Name, false)], false), indent);
+                    }
+                    else
+                        EmitExpression(output, statement.Expression, indent);
                     output.AppendLine();
                     break;
                 case LocalVariableStatement statement:
@@ -554,6 +562,28 @@ public sealed class GdScriptEmitter : IScriptEmitter
             case InvocationExpression invocation:
                 EmitExpression(output, invocation.Target, indent);
                 EmitArguments(output, invocation.Arguments, indent);
+                break;
+            case JavaScriptPropertyExpression property:
+                EmitExpression(output, property.Target, indent);
+                if (JavaScriptOperations.DotName(property.Name) is { } propertyName)
+                {
+                    output.Append('.');
+                    output.Append(propertyName);
+                }
+                else
+                {
+                    output.Append('[');
+                    EmitExpression(output, property.Name, indent);
+                    output.Append(']');
+                }
+                break;
+            case JavaScriptInvocationExpression javaScript:
+                EmitExpression(output, javaScript.Target, indent);
+                output.Append('.');
+                var methodName = JavaScriptOperations.DotName(javaScript.Name);
+                output.Append(methodName ?? "call");
+                EmitArguments(output, methodName is null
+                    ? JavaScriptOperations.WithName(javaScript.Name, javaScript.Arguments) : javaScript.Arguments, indent);
                 break;
             case ClampExpression clamp:
                 output.Append(clamp.Type?.Kind switch

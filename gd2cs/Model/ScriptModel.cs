@@ -256,6 +256,12 @@ public sealed record GodotMethodInvocationExpression(
     ArgumentList Arguments,
     bool IsImplicitReceiver = false) : Expression;
 
+// A dynamic JavaScript property, not a reflected Godot member; reads always return Variant.
+public sealed record JavaScriptPropertyExpression(Expression Target, Expression Name) : Expression;
+
+// A dynamic JavaScript call has no declared return type; only a source cast can refine its Variant result.
+public sealed record JavaScriptInvocationExpression(Expression Target, Expression Name, ArgumentList Arguments) : Expression;
+
 // Stores a type-bound string operation without either language's method spelling or comparison arguments.
 public sealed record StringOperationExpression(
     Expression Target,

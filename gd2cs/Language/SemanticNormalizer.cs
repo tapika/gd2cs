@@ -393,10 +393,7 @@ internal sealed class SemanticNormalizer
     {
         AssignmentStatement statement => NormalizeAssignment(statement, scope),
         ReturnStatement statement => NormalizeReturn(statement, scope),
-        ExpressionStatement statement => statement with
-        {
-            Expression = NormalizeExpression(statement.Expression, scope)
-        },
+        ExpressionStatement statement => NormalizeExpressionStatement(statement, scope),
         LocalVariableStatement statement => NormalizeLocal(statement, scope),
         ForEachStatement statement => NormalizeForEach(statement, scope),
         CounterLoopStatement statement => NormalizeCounterLoop(statement, scope),
@@ -415,7 +412,8 @@ internal sealed class SemanticNormalizer
             && TryNormalizeEventAssignment(statement, scope, out var connection))
             return new ExpressionStatement(connection);
         // Compound assignment also reads its target; Variant dictionary reads still require a cast.
-        var target = NormalizeExpression(statement.Target, scope, allowVariantDictionaryRead: statement.Operator == "=");
+        var target = NormalizeExpression(statement.Target, scope, allowVariantDictionaryRead: statement.Operator == "=",
+            allowJavaScriptVariant: statement.Operator == "=");
         var value = NormalizeTypedValue(ResolveType(target, scope), statement.Value, scope)!;
         return statement with { Target = target, Value = value };
     }
@@ -713,7 +711,8 @@ internal sealed class SemanticNormalizer
     }
 
     // Reconstructs the complete expression tree before applying parent-level patterns.
-    private Expression NormalizeExpression(Expression expression, BindingScope scope, bool allowVariantDictionaryRead = false)
+    private Expression NormalizeExpression(Expression expression, BindingScope scope, bool allowVariantDictionaryRead = false,
+        bool allowJavaScriptVariant = false)
     {
         var normalized = expression switch
         {
@@ -796,7 +795,7 @@ internal sealed class SemanticNormalizer
             InterpolatedStringExpression interpolated => NormalizeInterpolated(interpolated, scope),
             ParenthesizedExpression parenthesized => parenthesized with
             {
-                Expression = NormalizeExpression(parenthesized.Expression, scope, allowVariantDictionaryRead)
+                Expression = NormalizeExpression(parenthesized.Expression, scope, allowVariantDictionaryRead, allowJavaScriptVariant)
             },
             ValueExpression value when TryNormalizeEnum(value, scope, out var constant) => constant,
             ValueExpression value when TryNormalizeStaticMember(value, scope, out var global) => global,
@@ -805,13 +804,12 @@ internal sealed class SemanticNormalizer
             {
                 Target = NormalizeExpression(member.Target, scope)
             },
-            IndexExpression index => index with
-            {
-                Target = NormalizeExpression(index.Target, scope),
-                Index = NormalizeExpression(index.Index, scope)
-            },
+            IndexExpression index => NormalizeIndex(index, scope),
             _ => expression
         };
+        if (!allowJavaScriptVariant && IsJavaScriptVariant(normalized))
+            throw SourceLocations.Error(expression,
+                "JavaScriptObject dynamic results are Variant; cast the result explicitly with 'as ConcreteType' before using it. A declaration's type does not replace the cast.");
         if (!allowVariantDictionaryRead && IsVariantDictionaryRead(normalized, scope))
             throw SourceLocations.Error(expression,
                 "Variant-valued dictionary reads require an explicit cast; use 'entry.key as Node' or 'entry[\"key\"] as Type' with the appropriate concrete type.");
@@ -852,14 +850,14 @@ internal sealed class SemanticNormalizer
             && invocation.Target is MemberAccessExpression { Member: "AsGodotObject" } extraction
             && invocation.Arguments.Arguments.Count == 0)
             value = extraction.Target;
-        var normalized = NormalizeExpression(value, scope, allowVariantDictionaryRead: true);
+        var normalized = NormalizeExpression(value, scope, allowVariantDictionaryRead: true, allowJavaScriptVariant: true);
         if (type.IsEnum && ResolveType(normalized, scope)?.Kind != TypeKind.Variant)
             return new ConversionExpression(type, normalized);
         // Explicit casts also authorize Callable results and locals whose declared type is Variant.
         if (!IsVariantDictionaryRead(normalized, scope) && ResolveType(normalized, scope)?.Kind != TypeKind.Variant)
             return new SafeCastExpression(type, normalized);
         if (type.Kind is TypeKind.Variant or TypeKind.Void)
-            throw SourceLocations.Error(value, "Specify a concrete type for the dictionary value cast, not Variant or void.");
+            throw SourceLocations.Error(value, "Specify a concrete type for the Variant value cast, not Variant or void.");
         var isObject = type.Kind == TypeKind.GodotObject
             || type.Kind == TypeKind.UserObject && !godotTypes.IsBuiltInValueType(type.Name);
         return new VariantCastExpression(type, normalized, isObject);
@@ -891,6 +889,96 @@ internal sealed class SemanticNormalizer
         };
     }
 
+    /* JavaScript members are discovered at runtime, not in GodotSharp metadata. Bind only
+       receivers already known to be JavaScriptObject, and preserve names exactly. Native
+       Godot methods still use reflection. Dynamic reads/calls remain Variant regardless of
+       property spelling or the destination declaration's type. Only an explicit source cast
+       authorizes consuming a result; a discarded call and a property assignment need none.
+       Get/Set/Call are C# bridge spellings, never user-visible model types or inferred APIs.
+       Engine forwarding: https://github.com/godotengine/godot/blob/master/platform/web/javascript_bridge_singleton.cpp
+       (JavaScriptObjectImpl::_get, _set, and callp). */
+    private bool IsJavaScriptReceiver(Expression target, BindingScope scope)
+    {
+        var type = ResolveType(target, scope);
+        return type is not null
+            && (scope.ScriptTypes.NativeBase(type, scope.ClassPath) ?? type).Name == "JavaScriptObject";
+    }
+
+    private static bool IsJavaScriptVariant(Expression expression) => expression is
+        JavaScriptPropertyExpression or JavaScriptInvocationExpression
+        || expression is ParenthesizedExpression parentheses && IsJavaScriptVariant(parentheses.Expression);
+
+    private Expression NormalizeJavaScriptName(Expression name, BindingScope scope)
+    {
+        var normalized = NormalizeExpression(name, scope);
+        if (ResolveType(normalized, scope)?.Kind is not (TypeKind.String or TypeKind.StringName))
+            throw SourceLocations.Error(name, "JavaScript member names require String or StringName; provide an explicit cast if necessary.");
+        return normalized;
+    }
+
+    private Expression NormalizeIndex(IndexExpression index, BindingScope scope)
+    {
+        var target = NormalizeExpression(index.Target, scope);
+        return IsJavaScriptReceiver(target, scope)
+            ? new JavaScriptPropertyExpression(target, NormalizeJavaScriptName(index.Index, scope))
+            : index with { Target = target, Index = NormalizeExpression(index.Index, scope) };
+    }
+
+    // A Set bridge call is a write statement, not a Variant-returning expression.
+    private SyntaxElement NormalizeExpressionStatement(ExpressionStatement statement, BindingScope scope)
+    {
+        if (statement.Expression is InvocationExpression { Target: MemberAccessExpression member } invocation
+            && member.Member == (language == ScriptLanguage.CSharp ? "Set" : "set")
+            && IsJavaScriptReceiver(NormalizeExpression(member.Target, scope), scope))
+        {
+            if (invocation.Arguments.Arguments.Count != 2)
+                throw SourceLocations.Error(invocation, "JavaScriptObject.Set requires a property name and a value.");
+            var target = NormalizeExpression(member.Target, scope);
+            var arguments = invocation.Arguments.Arguments;
+            return new AssignmentStatement(
+                new JavaScriptPropertyExpression(target, NormalizeJavaScriptName(arguments[0].Value, scope)),
+                NormalizeExpression(arguments[1].Value, scope));
+        }
+        return statement with { Expression = NormalizeExpression(statement.Expression, scope, allowJavaScriptVariant: true) };
+    }
+
+    private bool TryNormalizeJavaScriptInvocation(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = null!;
+        if (invocation.Target is not MemberAccessExpression member)
+            return false;
+        var receiver = NormalizeExpression(member.Target, scope);
+        if (!IsJavaScriptReceiver(receiver, scope))
+            return false;
+        var receiverType = ResolveType(receiver, scope)!;
+        if (scope.ScriptTypes.HasMethod(receiverType, member.Member, scope.ClassPath))
+            return false;
+        var get = language == ScriptLanguage.CSharp ? "Get" : "get";
+        var call = language == ScriptLanguage.CSharp ? "Call" : "call";
+        var set = language == ScriptLanguage.CSharp ? "Set" : "set";
+        if (member.Member == set)
+            throw SourceLocations.Error(invocation, "JavaScriptObject.Set must be used as a standalone assignment statement.");
+        if (member.Member == get || member.Member == call)
+        {
+            var arguments = invocation.Arguments.Arguments;
+            if (arguments.Count == 0 || member.Member == get && arguments.Count != 1)
+                throw SourceLocations.Error(invocation, "JavaScriptObject.Get requires one property name; Call requires a method name followed by optional arguments.");
+            var name = NormalizeJavaScriptName(arguments[0].Value, scope);
+            result = member.Member == get
+                ? new JavaScriptPropertyExpression(receiver, name)
+                : new JavaScriptInvocationExpression(receiver, name,
+                    NormalizeArguments(invocation.Arguments with { Arguments = arguments.Skip(1).ToList() }, scope));
+            return true;
+        }
+        var native = scope.ScriptTypes.NativeBase(receiverType, scope.ClassPath) ?? receiverType;
+        var values = NormalizeArguments(invocation.Arguments, scope);
+        if (godotTypes.TryResolveMethod(native.Name, member.Member, language, values.Arguments.Count, out var method))
+            result = new GodotMethodInvocationExpression(receiver, method, values);
+        else
+            result = new JavaScriptInvocationExpression(receiver, new ValueExpression("\"" + member.Member + "\""), values);
+        return true;
+    }
+
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
@@ -914,6 +1002,9 @@ internal sealed class SemanticNormalizer
             return ordering;
         if (TryNormalizeDictionaryArray(invocation, scope, out var dictionaryArray))
             return dictionaryArray;
+        // Bind the receiver first: a reflected bridge call can itself supply JavaScriptObject.
+        if (TryNormalizeJavaScriptInvocation(invocation, scope, out var javaScript))
+            return javaScript;
         // A GDScript method reference is a Callable; C# needs an explicit delegate factory.
         if (language == ScriptLanguage.GdScript
             && invocation.Target is MemberAccessExpression { Member: "call_deferred", Target: ValueExpression name }
@@ -1748,6 +1839,8 @@ internal sealed class SemanticNormalizer
         {
             return new GodotMemberAccessExpression(target, reference);
         }
+        if (IsJavaScriptReceiver(target, scope))
+            return new JavaScriptPropertyExpression(target, new ValueExpression("\"" + member.Member + "\""));
         // Unlike unresolved user classes, a known Variant cannot expose arbitrary instance members
         // in C#. Cast the receiver, not the eventual result of the property access or method call.
         if (receiverType?.Kind == TypeKind.Variant)
@@ -1910,6 +2003,7 @@ internal sealed class SemanticNormalizer
         TypeDefaultExpression defaultValue => defaultValue.Type,
         LambdaExpression => new TypeReference("Callable"),
         CallableInvocationExpression => new TypeReference("Variant"),
+        JavaScriptPropertyExpression or JavaScriptInvocationExpression => new TypeReference("Variant"),
         ClampExpression clamp => clamp.Type,
         ArrayQueryExpression query => query.ResultType,
         MathFunctionExpression math => math.Type,
