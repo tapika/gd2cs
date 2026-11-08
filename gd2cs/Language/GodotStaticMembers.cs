@@ -4,7 +4,7 @@ using gd2cs.Model;
 
 namespace gd2cs.Language;
 
-internal sealed class GodotStaticMembers
+public sealed class GodotStaticMembers
 {
     private sealed record Entry(string NativeName, GodotStaticMemberReference Reference);
     private sealed record Candidate(string Owner, string Name, Type Type, GodotStaticMemberKind Kind,
@@ -34,9 +34,11 @@ internal sealed class GodotStaticMembers
     {
         var catalog = new GodotStaticMembers();
         var candidates = new List<Candidate>();
+        var types = assembly.GetTypes().Where(type => type.Namespace == "Godot"
+            && type.IsVisible && !type.IsNested && !type.IsEnum && !type.IsGenericType).ToList();
+        var singletonOwners = ResolveSingletonOwners(types, api, names);
         const BindingFlags flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy;
-        foreach (var type in assembly.GetTypes().Where(type => type.Namespace == "Godot"
-            && type.IsVisible && !type.IsNested && !type.IsEnum && !type.IsGenericType))
+        foreach (var type in types)
         {
             foreach (var field in type.GetFields(flags))
                 candidates.Add(new Candidate(field.DeclaringType!.Name, field.Name, field.FieldType,
@@ -56,7 +58,8 @@ internal sealed class GodotStaticMembers
             foreach (var owner in api.GetProperty(section).EnumerateArray())
             {
                 var nativeOwner = owner.GetProperty("name").GetString()!;
-                if (!names.TryResolve(nativeOwner, ScriptLanguage.GdScript, out var managedOwner, out _))
+                if (!singletonOwners.TryGetValue(nativeOwner, out var managedOwner)
+                    && !names.TryResolve(nativeOwner, ScriptLanguage.GdScript, out managedOwner, out _))
                     continue;
                 foreach (var group in new[] { "constants", "properties" })
                 {
@@ -94,7 +97,8 @@ internal sealed class GodotStaticMembers
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
         foreach (var (receiver, owner) in classes)
         {
-            if (!names.TryResolve(receiver, ScriptLanguage.GdScript, out var managedReceiver, out _))
+            if (!singletonOwners.TryGetValue(receiver, out var managedReceiver)
+                && !names.TryResolve(receiver, ScriptLanguage.GdScript, out managedReceiver, out _))
                 continue;
             var ancestor = owner;
             while (ancestor.TryGetProperty("inherits", out var parent) && classes.TryGetValue(parent.GetString()!, out ancestor))
@@ -128,6 +132,40 @@ internal sealed class GodotStaticMembers
         return catalog;
     }
 
+    /* Singleton properties belong to the static wrapper, while instance-type binding may
+       correctly resolve the same native name to e.g. InputInstance. Establish the wrapper
+       independently: the engine registers the native singleton type, and its public static
+       Singleton getter returns an instance carrying that native class identity. Require a
+       unique wrapper; never pick a type merely because it contains a same-named property.
+       Only inspect metadata: evaluating Singleton/property getters would require the engine. */
+    private static Dictionary<string, string> ResolveSingletonOwners(List<Type> types, JsonElement api, GodotTypeNames names)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!api.TryGetProperty("singletons", out var singletons))
+            return result;
+        var registered = singletons.EnumerateArray().Select(singleton => singleton.GetProperty("type").GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+        var wrappers = new List<(string Native, string Managed)>();
+        foreach (var type in types)
+        {
+            var singleton = type.GetProperty("Singleton", BindingFlags.Public | BindingFlags.Static);
+            if (singleton?.GetMethod?.IsPublic != true || singleton.GetIndexParameters().Length != 0)
+                continue;
+            var instance = singleton.PropertyType;
+            var native = instance.GetCustomAttributesData()
+                .FirstOrDefault(attribute => attribute.AttributeType.Name == "GodotClassNameAttribute")
+                ?.ConstructorArguments.FirstOrDefault().Value as string;
+            if (native is null && names.TryResolve(instance.Name, ScriptLanguage.CSharp, out _, out var resolved))
+                native = resolved;
+            if (native is not null && registered.Contains(native))
+                wrappers.Add((native, type.Name));
+        }
+        foreach (var group in wrappers.GroupBy(wrapper => wrapper.Native, StringComparer.Ordinal))
+            if (group.Count() == 1)
+                result.Add(group.Key, group.Single().Managed);
+        return result;
+    }
+
     // Context-free tests use a small deterministic subset; the CLI uses the full reflected API.
     public static GodotStaticMembers CreateKnownBuiltIns()
     {
@@ -141,6 +179,14 @@ internal sealed class GodotStaticMembers
                 new GodotStaticMemberReference(owner, name, new TypeReference(owner), GodotStaticMemberKind.Property));
         catalog.Add("Color.RED", new GodotStaticMemberReference("Colors", "Red", new TypeReference("Color"),
             GodotStaticMemberKind.Property));
+        foreach (var (owner, native, managed) in new[]
+        {
+            ("Input", "emulate_mouse_from_touch", "EmulateMouseFromTouch"),
+            ("Input", "emulate_touch_from_mouse", "EmulateTouchFromMouse"),
+            ("OS", "low_processor_usage_mode", "LowProcessorUsageMode")
+        })
+            catalog.Add(owner + "." + native, new GodotStaticMemberReference(owner, managed,
+                new TypeReference("bool"), GodotStaticMemberKind.Property));
         var notification = new GodotStaticMemberReference("Node", "NotificationReady", new TypeReference("int64"),
             GodotStaticMemberKind.Constant);
         catalog.Add("Node.NOTIFICATION_READY", notification);

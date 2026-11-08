@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace gd2cs.Language;
 
-internal sealed class GodotTypeNames
+public sealed class GodotTypeNames
 {
     // Exact native/managed spellings resolve to the same reflected CLR identity.
     private readonly Dictionary<string, string> nativeToManaged = new(StringComparer.Ordinal);
