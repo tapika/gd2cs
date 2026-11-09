@@ -5,6 +5,7 @@ internal enum TokenKind
     Identifier,
     Number,
     String,
+    CharacterLiteral,
     InterpolatedString,
     Comment,
     NewLine,

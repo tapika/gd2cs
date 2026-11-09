@@ -543,6 +543,10 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 output.Append('.');
                 output.Append(constant.Member);
                 break;
+            case NumberFormatExpression number:
+                output.Append("String.num");
+                EmitArguments(output, number.Arguments, indent);
+                break;
             case StringifyExpression stringify:
                 output.Append("str");
                 EmitArguments(output, stringify.Arguments, indent);

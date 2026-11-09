@@ -9,7 +9,7 @@ public sealed class CSharpParser : IScriptParser
     // These names are reserved for generated C#-only helpers.
     private static readonly HashSet<string> generatedHelperNames = new(StringComparer.Ordinal)
     {
-        "gdCallableIsValid", "gdStr", "gdSortCustom", "gdArray", "gdDictKeys", "gdDictValues"
+        "gdCallableIsValid", "gdStr", "gdNum", "gdSortCustom", "gdArray", "gdDictKeys", "gdDictValues"
     };
 
     private TokenReader tokens = null!;
@@ -691,6 +691,15 @@ public sealed class CSharpParser : IScriptParser
     {
         while (tokens.Current.Kind != TokenKind.OpenBrace)
         {
+            // Expression-bodied generated helpers are discarded just like block-bodied helpers.
+            if (tokens.TryConsume(TokenKind.LambdaArrow))
+            {
+                while (tokens.Current.Kind is not (TokenKind.Semicolon or TokenKind.EndOfFile))
+                    tokens.Expect(tokens.Current.Kind);
+                tokens.Expect(TokenKind.Semicolon);
+                EndOfLine(optional: true);
+                return;
+            }
             if (tokens.Current.Kind is TokenKind.EndOfFile or TokenKind.Semicolon)
                 throw new ParseException("Expected a generated helper body", tokens.Current.Line, tokens.Current.Column);
             tokens.Expect(tokens.Current.Kind);

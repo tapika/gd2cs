@@ -149,6 +149,9 @@ public sealed record CallableValidityExpression(Expression Target) : Expression;
 // Godot's str accepts nil and concatenates Variant conversions, unlike Object.to_string().
 public sealed record StringifyExpression(ArgumentList Arguments) : Expression;
 
+// Formats a number with an explicit maximum fractional precision, independently of source syntax.
+public sealed record NumberFormatExpression(ArgumentList Arguments) : Expression;
+
 // Copies a typed Godot array into a contiguous API buffer; no packed storage operations are implied.
 public sealed record ArrayBufferExpression(Expression Value, TypeReference ElementType) : Expression;
 

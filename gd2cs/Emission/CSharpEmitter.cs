@@ -13,6 +13,7 @@ public sealed class CSharpEmitter : IScriptEmitter
     private bool requiresArrayBuffers;
     private bool requiresCustomSort;
     private bool requiresStringify;
+    private bool requiresNumberFormat;
     private bool requiresLinq;
     private readonly HashSet<CollectionOperation> dictionaryArrayHelpers = new();
     // Each test gets a unique declaration: C# pattern variables also occupy the containing block's scope.
@@ -31,6 +32,7 @@ public sealed class CSharpEmitter : IScriptEmitter
         requiresArrayBuffers = false;
         requiresCustomSort = false;
         requiresStringify = false;
+        requiresNumberFormat = false;
         requiresLinq = false;
         dictionaryArrayHelpers.Clear();
         patternNames.Clear();
@@ -141,6 +143,8 @@ public sealed class CSharpEmitter : IScriptEmitter
             EmitCustomSortHelper(output, indent);
         if (isRoot && requiresStringify)
             EmitStringifyHelper(output, indent);
+        if (isRoot && requiresNumberFormat)
+            EmitNumberFormatHelper(output, indent);
         if (isRoot)
             foreach (var operation in dictionaryArrayHelpers.Order())
                 EmitDictionaryArrayHelper(output, operation, indent);
@@ -303,6 +307,11 @@ public sealed class CSharpEmitter : IScriptEmitter
                 EmitExpression(output, constant.Target, indent);
                 output.Append('.');
                 output.Append(constant.Member);
+                break;
+            case NumberFormatExpression number:
+                requiresNumberFormat = true;
+                output.Append("gdNum");
+                EmitArguments(output, number.Arguments, indent);
                 break;
             case StringifyExpression stringify:
                 requiresStringify = true;
@@ -1182,6 +1191,16 @@ public sealed class CSharpEmitter : IScriptEmitter
     }
 
     // Variant.ToString uses Godot's conversion, including nil, rather than CLR object formatting.
+    // Optional fractional digits remove trailing zeroes; invariant culture keeps the GD decimal separator.
+    private static void EmitNumberFormatHelper(StringBuilder output, string indent)
+    {
+        output.AppendLine();
+        output.AppendLine(indent + "    private static string gdNum(float value, int decimals) =>");
+        output.AppendLine(indent + "        value.ToString(");
+        output.AppendLine(indent + "            \"0.\" + new string('#', decimals),");
+        output.AppendLine(indent + "            System.Globalization.CultureInfo.InvariantCulture);");
+    }
+
     private static void EmitStringifyHelper(StringBuilder output, string indent)
     {
         output.AppendLine();

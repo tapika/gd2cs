@@ -804,6 +804,7 @@ internal sealed class SemanticNormalizer
                 Target = NormalizeExpression(callable.Target, scope)
             },
             StringifyExpression stringify => NormalizeStringify(stringify.Arguments, scope),
+            NumberFormatExpression number => number with { Arguments = NormalizeArguments(number.Arguments, scope) },
             CallableValidityExpression callable => callable with
             {
                 Target = NormalizeExpression(callable.Target, scope)
@@ -1041,6 +1042,8 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
+        if (TryNormalizeNumberFormat(invocation, scope, out var number))
+            return number;
         // Preserve raw C# targets until scope binding; parser-time spelling guesses cannot
         // distinguish float variables from integers or respect shadowed Mathf/user functions.
         if (TryNormalizeMath(invocation, scope, out var math))
@@ -2028,6 +2031,32 @@ internal sealed class SemanticNormalizer
 
     // Stringification explicitly consumes Variants, including dictionary reads. C# constructs
     // an empty Variant for nil because null cannot be passed directly to the Variant value type.
+    // Recognize only the unshadowed built-in or reserved helper. Explicit precision avoids
+    // pretending the compact .NET format implements Godot's automatic (-1) precision mode.
+    private bool TryNormalizeNumberFormat(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = null!;
+        var builtin = language == ScriptLanguage.GdScript
+            && invocation.Target is MemberAccessExpression { Target: ValueExpression { Text: "String" }, Member: "num" }
+            && scope.Resolve("String") is null && !scope.IsUserMethod("String") && !scope.UserTypes.Contains("String");
+        var helper = language == ScriptLanguage.CSharp && invocation.Target is ValueExpression { Text: "gdNum" }
+            && scope.Resolve("gdNum") is null && !scope.IsUserMethod("gdNum") && !scope.UserTypes.Contains("gdNum");
+        if (!builtin && !helper)
+            return false;
+        if (invocation.Arguments.Arguments.Count != 2)
+            throw SourceLocations.Error(invocation, "String.num requires an explicit nonnegative decimal count in gd2cs; automatic precision is not supported.");
+        var arguments = NormalizeArguments(invocation.Arguments, scope);
+        var value = arguments.Arguments[0].Value;
+        var decimals = arguments.Arguments[1].Value;
+        if (ResolveType(value, scope)?.Kind is not (TypeKind.Float32 or TypeKind.Int32)
+            || ResolveType(decimals, scope)?.Kind != TypeKind.Int32)
+            throw SourceLocations.Error(invocation, "String.num requires a float/int value and an int decimal count; supply explicit types or casts where needed.");
+        if (decimals is UnaryExpression { Operator: "-" })
+            throw SourceLocations.Error(invocation, "String.num requires a nonnegative decimal count; automatic precision is not supported.");
+        result = new NumberFormatExpression(arguments);
+        return true;
+    }
+
     private StringifyExpression NormalizeStringify(ArgumentList arguments, BindingScope scope) => new(arguments with
     {
         Arguments = arguments.Arguments.Select(argument => argument with
@@ -2070,6 +2099,7 @@ internal sealed class SemanticNormalizer
         CallableNullExpression => new TypeReference("bool"),
         CallableValidityExpression => new TypeReference("bool"),
         StringifyExpression => new TypeReference("string"),
+        NumberFormatExpression => new TypeReference("string"),
         ArrayBufferExpression buffer => new TypeReference("ArrayBuffer", new List<TypeReference> { buffer.ElementType }),
         CurrentInstanceExpression => scope.CurrentInstanceType,
         ValueExpression value when value.Text.StartsWith('"') => new TypeReference("string"),

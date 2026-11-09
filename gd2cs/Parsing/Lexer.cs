@@ -38,6 +38,11 @@ internal sealed class Lexer
                 continue;
             }
 
+            // Generated C# helpers contain character literals such as '#'; keep them opaque
+            // so symbol scanning/helper skipping cannot mistake their contents for comments.
+            if (cSharpIdentifiers && character == '\'')
+                return ReadString('\'');
+
             if (character == '#' || (character == '/' && position + 1 < source.Length && source[position + 1] == '/'))
             {
                 var tokenLine = line;
@@ -162,7 +167,7 @@ internal sealed class Lexer
         return new Token(TokenKind.Number, source[start..position], tokenLine, tokenColumn);
     }
 
-    private Token ReadString()
+    private Token ReadString(char quote = '"')
     {
         var start = position;
         var tokenLine = line;
@@ -176,10 +181,11 @@ internal sealed class Lexer
                 Advance();
                 continue;
             }
-            if (source[position] == '"')
+            if (source[position] == quote)
             {
                 Advance();
-                return new Token(TokenKind.String, source[start..position], tokenLine, tokenColumn);
+                return new Token(quote == '"' ? TokenKind.String : TokenKind.CharacterLiteral,
+                    source[start..position], tokenLine, tokenColumn);
             }
             Advance();
         }
