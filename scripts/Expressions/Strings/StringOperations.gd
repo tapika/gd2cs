@@ -18,6 +18,16 @@ func literal() -> String:
 func chained(text: String) -> String:
 	return text.to_upper().to_lower()
 
+func combine(values: Array[String], separator: String) -> String:
+	var literal := " / ".join(values)
+	var compact := "".join(values)
+	var multiline := separator.join(
+		values
+	)
+	var empty : Array[String]
+	var emptyResult := separator.join(empty)
+	return separator.to_lower().join(values).to_upper()
+
 func stringify(value: RefCounted) -> String:
 	return value.to_string()
 
@@ -42,7 +52,13 @@ func convert(value: Variant, entries: Dictionary[String, Variant], callback: Cal
 func custom(source: LocalStrings, value: Variant) -> String:
 	return source.str(value) + source.ToString(1)
 
+func customJoin(source: LocalStrings, values: Array[String]) -> String:
+	return source.join(values)
+
 class LocalStrings:
+	func join(values: Array[String]) -> String:
+		return "custom"
+
 	func str(value: Variant) -> String:
 		return "custom"
 

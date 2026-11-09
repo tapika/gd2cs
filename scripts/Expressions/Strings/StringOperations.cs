@@ -31,6 +31,18 @@ public partial class StringOperations : RefCounted
 		return text.ToUpperInvariant().ToLowerInvariant();
 	}
 
+	public string combine(Godot.Collections.Array<string> values, string separator)
+	{
+		var literal = string.Join(" / ", values);
+		var compact = string.Join("", values);
+		var multiline = string.Join(separator,
+			values
+		);
+		Godot.Collections.Array<string> empty = new Godot.Collections.Array<string>();
+		var emptyResult = string.Join(separator, empty);
+		return string.Join(separator.ToLowerInvariant(), values).ToUpperInvariant();
+	}
+
 	public string stringify(RefCounted value)
 	{
 		return value.ToString();
@@ -67,8 +79,18 @@ public partial class StringOperations : RefCounted
 		return source.str(value) + source.ToString(1);
 	}
 
+	public string customJoin(LocalStrings source, Godot.Collections.Array<string> values)
+	{
+		return source.join(values);
+	}
+
 	public partial class LocalStrings : RefCounted
 	{
+		public string join(Godot.Collections.Array<string> values)
+		{
+			return "custom";
+		}
+
 		public string str(Variant value)
 		{
 			return "custom";

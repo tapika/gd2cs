@@ -415,6 +415,14 @@ public sealed class CSharpEmitter : IScriptEmitter
                 output.Append(godotTypes.MethodName(method.Method, ScriptLanguage.CSharp));
                 EmitArguments(output, method.Arguments, indent);
                 break;
+            // C# takes the separator as an argument, not as the receiver of an extension method.
+            case StringOperationExpression { Operation: StringOperation.Join } join:
+                output.Append("string.Join");
+                EmitArguments(output, join.Arguments with
+                {
+                    Arguments = [new Argument(join.Target, false), .. join.Arguments.Arguments]
+                }, indent);
+                break;
             case StringOperationExpression operation:
                 EmitExpression(output, operation.Target, indent);
                 output.Append('.');

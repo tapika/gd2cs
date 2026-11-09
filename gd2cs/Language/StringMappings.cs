@@ -19,7 +19,8 @@ internal static class StringMappings
         new(StringOperation.Lowercase, "to_lower", "ToLowerInvariant", 0, "string"),
         new(StringOperation.Contains, "contains", "Contains", 1, "bool"),
         new(StringOperation.StartsWith, "begins_with", "StartsWith", 1, "bool", true),
-        new(StringOperation.EndsWith, "ends_with", "EndsWith", 1, "bool", true)
+        new(StringOperation.EndsWith, "ends_with", "EndsWith", 1, "bool", true),
+        new(StringOperation.Join, "join", "Join", 1, "string")
     ];
 
     public static bool TryInvocation(
@@ -34,7 +35,8 @@ internal static class StringMappings
         var isCSharp = language == ScriptLanguage.CSharp;
         var mapping = mappings.FirstOrDefault(mapping =>
             member == (isCSharp ? mapping.CSharpMember : mapping.GdScriptMember));
-        if (mapping is null)
+        // Join is static in C# and is bound separately, never as an instance method.
+        if (mapping is null || isCSharp && mapping.Operation == StringOperation.Join)
             return false;
 
         var ordinal = isCSharp && mapping.OrdinalComparison;

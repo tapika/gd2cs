@@ -271,14 +271,16 @@ public sealed record StringOperationExpression(
     StringOperation Operation,
     ArgumentList Arguments) : Expression;
 
-// Distinguishes culture-independent casing and matching semantics shared by both languages.
+// Distinguishes casing, matching, and joining semantics shared by both languages.
 public enum StringOperation
 {
     Uppercase,
     Lowercase,
     Contains,
     StartsWith,
-    EndsWith
+    EndsWith,
+    // Target is the separator; arguments contain the string collection in both dialects.
+    Join
 }
 
 // Represents collection behavior independently of method and property spellings.

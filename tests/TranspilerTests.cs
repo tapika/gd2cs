@@ -172,6 +172,26 @@ public sealed class TranspilerTests
         Assert.True(error.Column > 1);
     }
 
+    [Theory]
+    [InlineData(".gd", "\" / \".join(values)", "\" / \".join(1)", "Array[String]")]
+    [InlineData(".gd", "\" / \".join(values)", "\" / \".join()", "one Array[String]")]
+    [InlineData(".gd", "func combine(values: Array[String], separator: String)", "func combine(values: Array[int], separator: String)", "Array[String]")]
+    [InlineData(".gd", "func combine(values: Array[String], separator: String)", "func combine(values: Array[String], separator: Variant)", "known String")]
+    [InlineData(".cs", "string.Join(\" / \", values)", "string.Join(\" / \", 1)", "Array[String]")]
+    [InlineData(".cs", "string.Join(\" / \", values)", "string.Join(\" / \")", "separator")]
+    [InlineData(".cs", "string.Join(\" / \", values)", "string.Join(1, values)", "String separator")]
+    public void RejectStringJoin(string extension, string original, string replacement, string message)
+    {
+        var source = File.ReadAllText(Fixture("Expressions/Strings/StringOperations" + extension));
+        Assert.Contains(original, source);
+        source = source.Replace(original, replacement);
+        var language = extension == ".gd" ? Language.ScriptLanguage.GdScript : Language.ScriptLanguage.CSharp;
+        var error = Assert.Throws<Parsing.ParseException>(() => new Transpiler().Parse(source, language));
+        Assert.Contains(message, error.Message);
+        Assert.True(error.Line > 1);
+        Assert.True(error.Column > 1);
+    }
+
     // Alias spelling and implicit numeric coercion canonicalize to the same fixture/model.
     [Theory]
     [InlineData("clampf(", "clamp(")]

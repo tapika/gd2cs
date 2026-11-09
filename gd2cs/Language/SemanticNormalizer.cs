@@ -1042,6 +1042,8 @@ internal sealed class SemanticNormalizer
     // Binds global calls and instance methods only when their receiver or implicit instance is known.
     private Expression NormalizeInvocation(InvocationExpression invocation, BindingScope scope)
     {
+        if (TryNormalizeStringJoin(invocation, scope, out var join))
+            return join;
         if (TryNormalizeNumberFormat(invocation, scope, out var number))
             return number;
         // Preserve raw C# targets until scope binding; parser-time spelling guesses cannot
@@ -2031,6 +2033,57 @@ internal sealed class SemanticNormalizer
 
     // Stringification explicitly consumes Variants, including dictionary reads. C# constructs
     // an empty Variant for nil because null cannot be passed directly to the Variant value type.
+    /* GD makes the separator the receiver; C# makes it the first static argument. Bind
+       both to the same string operation before normal member lookup. Type information
+       must prove Array[String]: .NET's broader generic Join overloads would otherwise
+       silently stringify elements that GD cannot join. Script types/names shadow APIs. */
+    private bool TryNormalizeStringJoin(InvocationExpression invocation, BindingScope scope, out Expression result)
+    {
+        result = null!;
+        if (invocation.Target is not MemberAccessExpression member)
+            return false;
+        Expression separator;
+        ArgumentList arguments;
+        if (language == ScriptLanguage.CSharp)
+        {
+            var owner = ReceiverName(member.Target);
+            if (member.Member != "Join" || owner is not ("string" or "String" or "System.String")
+                || scope.StaticReceiver(member.Target) is not null)
+                return false;
+            var root = owner.Split('.')[0];
+            if (scope.Resolve(root) is not null || scope.IsUserMethod(root) || scope.UserTypes.Contains(root))
+                return false;
+            if (invocation.Arguments.Arguments.Count != 2)
+                throw SourceLocations.Error(invocation, "string.Join requires a string separator and one Array[String] collection in gd2cs.");
+            separator = NormalizeExpression(invocation.Arguments.Arguments[0].Value, scope);
+            arguments = invocation.Arguments with { Arguments = invocation.Arguments.Arguments.Skip(1).ToList() };
+        }
+        else
+        {
+            if (member.Member != "join")
+                return false;
+            separator = NormalizeExpression(member.Target, scope);
+            var type = ResolveType(separator, scope);
+            if (type is null || type.Kind == TypeKind.Variant)
+                throw SourceLocations.Error(invocation, "String join requires a known String separator; declare its type or cast with 'as String'.");
+            if (type.Kind != TypeKind.String)
+                return false;
+            if (invocation.Arguments.Arguments.Count != 1)
+                throw SourceLocations.Error(invocation, "String join requires one Array[String] collection.");
+            arguments = invocation.Arguments;
+        }
+        arguments = NormalizeArguments(arguments, scope);
+        if (ResolveType(separator, scope)?.Kind != TypeKind.String)
+            throw SourceLocations.Error(invocation, "String join requires a String separator; declare its type or cast with 'as String'.");
+        var collectionType = ResolveType(arguments.Arguments[0].Value, scope);
+        if (collectionType?.Kind != TypeKind.Array || collectionType.TypeArguments.Count != 1
+            || collectionType.TypeArguments[0].Kind != TypeKind.String)
+            throw SourceLocations.Error(invocation,
+                "String join requires Array[String]; declare the collection's type or cast with 'as Array[String]' instead of implicit element conversion.");
+        result = new StringOperationExpression(separator, StringOperation.Join, arguments);
+        return true;
+    }
+
     // Recognize only the unshadowed built-in or reserved helper. Explicit precision avoids
     // pretending the compact .NET format implements Godot's automatic (-1) precision mode.
     private bool TryNormalizeNumberFormat(InvocationExpression invocation, BindingScope scope, out Expression result)
