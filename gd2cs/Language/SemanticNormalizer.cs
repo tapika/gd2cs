@@ -398,6 +398,7 @@ internal sealed class SemanticNormalizer
         ForEachStatement statement => NormalizeForEach(statement, scope),
         CounterLoopStatement statement => NormalizeCounterLoop(statement, scope),
         WhileStatement statement => NormalizeWhile(statement, scope),
+        SwitchStatement statement => NormalizeSwitch(statement, scope),
         ConditionalStatement statement => language == ScriptLanguage.GdScript && ForLoopLowering.TryFold(statement, out var loop)
             ? NormalizeCounterLoop(loop, scope) : NormalizeConditional(statement, scope),
         _ => element
@@ -532,6 +533,64 @@ internal sealed class SemanticNormalizer
         {
             scope.Pop();
         }
+    }
+
+    // Case labels bind against the surrounding class; each body gets its own GD-compatible local scope.
+    private SwitchStatement NormalizeSwitch(SwitchStatement statement, BindingScope scope)
+    {
+        var value = NormalizeExpression(statement.Value, scope);
+        var valueType = ResolveType(value, scope);
+        if (valueType?.Kind == TypeKind.Variant)
+            throw SourceLocations.Error(statement.Value, "Match/switch requires a concrete value type; cast Variant with 'as ConcreteType' first.");
+        if (!statement.Elements.OfType<SwitchSection>().Any())
+            throw SourceLocations.Error(statement, "Match/switch requires at least one case.");
+        var elements = new List<SyntaxElement>();
+        var hasDefault = false;
+        foreach (var element in statement.Elements)
+        {
+            if (element is not SwitchSection section)
+            {
+                elements.Add(element);
+                continue;
+            }
+            if (hasDefault)
+                throw SourceLocations.Error(section, "The default/wildcard case must be last for GD match compatibility.");
+            hasDefault = section.Labels.Contains(null);
+            if (hasDefault && section.Labels.Count != 1)
+                throw SourceLocations.Error(section, "The default/wildcard case cannot share other labels.");
+            SwitchSemantics.ValidateBreaks(section.Elements);
+            var labels = new List<Expression?>();
+            foreach (var label in section.Labels)
+            {
+                var normalized = label is null ? null : NormalizeCaseLabel(label, valueType, scope);
+                if (normalized is not null && !SwitchSemantics.IsConstantPattern(normalized))
+                    throw SourceLocations.Error(label!, "Only constant match/switch labels are supported; use if/else for other patterns.");
+                labels.Add(normalized);
+            }
+            elements.Add(section with { Labels = labels, Elements = NormalizeNestedBody(section.Elements, scope) });
+        }
+        return statement with { Value = value, Elements = elements };
+    }
+
+    // An external enum definition may not be available in this script. A qualified label
+    // whose owner exactly matches the selector's declared type is already explicit source
+    // information, not an unknown instance-property chain. Preserve it without inventing
+    // an enum or numeric value. Local names must not masquerade as a type qualifier.
+    private Expression NormalizeCaseLabel(Expression label, TypeReference? valueType, BindingScope scope)
+    {
+        if (TryNormalizeEnum(label, scope, out var native))
+            return native;
+        if (label is MemberAccessExpression member && valueType is not null
+            && ReceiverName(member.Target) == valueType.Name
+            && !scope.ScriptTypes.IsEnum(valueType.Name, scope.ClassPath))
+        {
+            Expression root = member.Target;
+            while (root is MemberAccessExpression owner)
+                root = owner.Target;
+            if (root is ValueExpression name && scope.Resolve(name.Text) is null && !scope.IsUserMethod(name.Text))
+                return label;
+        }
+        return NormalizeExpression(label, scope);
     }
 
     // Gives every branch a separate local scope while sharing the surrounding symbols.

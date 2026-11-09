@@ -161,6 +161,17 @@ public sealed class GdScriptParser : IScriptParser
             var statementToken = tokens.Current;
             var statementColumn = statementToken.Column;
             expressionOwnerColumn = statementColumn;
+            // pass is GD's empty body marker, not an executable neutral statement.
+            if (tokens.TryConsume(TokenKind.Identifier, "pass"))
+            {
+                EndOfLine(optional: true);
+                continue;
+            }
+            if (tokens.Current.Text == "match")
+            {
+                elements.Add(ParseMatch(statementColumn));
+                continue;
+            }
             if (tokens.Current.Text == "for")
             {
                 elements.Add(ParseForEach(statementColumn));
@@ -178,7 +189,7 @@ public sealed class GdScriptParser : IScriptParser
             }
             if (tokens.TryConsume(TokenKind.Identifier, "break"))
             {
-                elements.Add(new BreakStatement());
+                elements.Add(SourceLocations.Record(new BreakStatement(), statementToken));
                 EndOfLine(optional: true);
                 continue;
             }
@@ -251,6 +262,44 @@ public sealed class GdScriptParser : IScriptParser
         tokens.Expect(TokenKind.Colon);
         EndOfLine();
         return new WhileStatement(condition, ParseBody(statementColumn));
+    }
+
+    // Indented constant patterns share the same section model as C# case labels.
+    private SwitchStatement ParseMatch(int statementColumn)
+    {
+        var opening = tokens.Expect(TokenKind.Identifier, "match");
+        var value = ParseExpression();
+        tokens.Expect(TokenKind.Colon);
+        EndOfLine();
+        var elements = new List<SyntaxElement>();
+        while (tokens.Current.Kind != TokenKind.EndOfFile)
+        {
+            if (tokens.Current.Kind == TokenKind.NewLine)
+            {
+                if (tokens.Peek.Kind != TokenKind.NewLine && tokens.Peek.Column <= statementColumn)
+                    break;
+            }
+            else if (tokens.Current.Column <= statementColumn)
+                break;
+            if (ParseTrivia(elements))
+                continue;
+            var pattern = tokens.Current;
+            var labels = new List<Expression?>();
+            do
+            {
+                if (tokens.Current.Text is "var" or "when" || tokens.Current.Kind is TokenKind.OpenBracket or TokenKind.OpenBrace)
+                    throw new ParseException("Only constant match patterns and '_' are supported; bindings, collection patterns, and guards are not supported.",
+                        tokens.Current.Line, tokens.Current.Column);
+                labels.Add(tokens.TryConsume(TokenKind.Identifier, "_") ? null : ParseExpression());
+            } while (tokens.TryConsume(TokenKind.Comma));
+            if (tokens.Current.Kind != TokenKind.Colon)
+                throw new ParseException("Only constant match patterns and '_' are supported; pattern guards are not supported.",
+                    tokens.Current.Line, tokens.Current.Column);
+            tokens.Expect(TokenKind.Colon);
+            EndOfLine();
+            elements.Add(SourceLocations.Record(new SwitchSection(labels, ParseBody(pattern.Column)), pattern));
+        }
+        return SourceLocations.Record(new SwitchStatement(value, elements), opening);
     }
 
     // Groups adjacent elif and else blocks with their originating if statement.

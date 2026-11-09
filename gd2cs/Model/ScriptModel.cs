@@ -525,6 +525,13 @@ public sealed record ConditionalStatement(
     List<ConditionalBranch> Branches,
     List<SyntaxElement>? ElseElements) : Statement;
 
+// Match/switch branches exit implicitly in the neutral model; C# section-ending breaks are dialect syntax.
+public sealed record SwitchStatement(Expression Value, List<SyntaxElement> Elements) : Statement;
+
+// Several constant labels share one body (GD comma patterns / C# consecutive case labels).
+// A null label represents GD's wildcard or C# default, rather than a null constant expression.
+public sealed record SwitchSection(List<Expression?> Labels, List<SyntaxElement> Elements) : SyntaxElement;
+
 // Exits the nearest supported loop.
 public sealed record BreakStatement : Statement;
 

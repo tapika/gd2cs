@@ -321,13 +321,20 @@ public sealed class CSharpParser : IScriptParser
     }
 
     // Reads recursively nested statements, comments, and blank lines up to a closing brace.
-    private List<SyntaxElement> ParseBody()
+    private List<SyntaxElement> ParseBody(int? caseColumn = null)
     {
         var elements = new List<SyntaxElement>();
-        while (tokens.Current.Kind != TokenKind.CloseBrace)
+        while (tokens.Current.Kind != TokenKind.CloseBrace
+            && !(caseColumn is not null && (tokens.Current.Text is "case" or "default"
+                || tokens.Current.Kind == TokenKind.Comment && tokens.Current.Column <= caseColumn.Value)))
         {
             if (ParseTrivia(elements))
                 continue;
+            if (tokens.Current.Text == "switch")
+            {
+                elements.Add(ParseSwitch());
+                continue;
+            }
             if (tokens.Current.Text == "foreach")
             {
                 elements.Add(ParseForEach());
@@ -348,11 +355,12 @@ public sealed class CSharpParser : IScriptParser
                 elements.Add(ParseConditional());
                 continue;
             }
+            var breakToken = tokens.Current;
             if (tokens.TryConsume(TokenKind.Identifier, "break"))
             {
                 tokens.Expect(TokenKind.Semicolon);
                 EndOfLine();
-                elements.Add(new BreakStatement());
+                elements.Add(SourceLocations.Record(new BreakStatement(), breakToken));
                 continue;
             }
             if (tokens.TryConsume(TokenKind.Identifier, "continue"))
@@ -487,6 +495,67 @@ public sealed class CSharpParser : IScriptParser
         var condition = ParseExpression();
         tokens.Expect(TokenKind.CloseParenthesis);
         return new WhileStatement(condition, ParseBracedBody());
+    }
+
+    // Consecutive labels share a section. Only its final break belongs to switch syntax;
+    // returns/continues remain ordinary statements so they retain their function/loop meaning.
+    private SwitchStatement ParseSwitch()
+    {
+        var opening = tokens.Expect(TokenKind.Identifier, "switch");
+        var value = ParseCondition();
+        EndOfLine();
+        tokens.Expect(TokenKind.OpenBrace);
+        EndOfLine();
+        var elements = new List<SyntaxElement>();
+        while (tokens.Current.Kind != TokenKind.CloseBrace)
+        {
+            if (ParseTrivia(elements))
+                continue;
+            var labelToken = tokens.Current;
+            var labels = new List<Expression?>();
+            do
+            {
+                if (tokens.TryConsume(TokenKind.Identifier, "default"))
+                    labels.Add(null);
+                else
+                {
+                    tokens.Expect(TokenKind.Identifier, "case");
+                    labels.Add(ParseExpression());
+                }
+                if (tokens.Current.Kind != TokenKind.Colon)
+                    throw new ParseException("Only constant switch labels and default are supported; patterns and guards are not supported.",
+                        tokens.Current.Line, tokens.Current.Column);
+                tokens.Expect(TokenKind.Colon);
+                EndOfLine();
+            } while (tokens.Current.Text is "case" or "default");
+            var braced = tokens.TryConsume(TokenKind.OpenBrace);
+            if (braced)
+                EndOfLine();
+            var body = ParseBody(braced ? null : labelToken.Column);
+            if (braced)
+            {
+                tokens.Expect(TokenKind.CloseBrace);
+                EndOfLine();
+            }
+            var last = body.FindLastIndex(element => element is not (CommentElement or BlankLineElement));
+            if (last >= 0 && body[last] is BreakStatement)
+                body.RemoveAt(last);
+            else if (!SwitchSemantics.EndsControlFlow(body))
+                throw new ParseException("A switch case must end with break, return, or continue; only consecutive empty case labels may fall through.",
+                    labelToken.Line, labelToken.Column);
+            // GD puts blank lines between sections outside the preceding indented body.
+            var trailing = new List<SyntaxElement>();
+            while (body.LastOrDefault() is BlankLineElement)
+            {
+                trailing.Insert(0, body[^1]);
+                body.RemoveAt(body.Count - 1);
+            }
+            elements.Add(SourceLocations.Record(new SwitchSection(labels, body), labelToken));
+            elements.AddRange(trailing);
+        }
+        tokens.Expect(TokenKind.CloseBrace);
+        EndOfLine(optional: true);
+        return SourceLocations.Record(new SwitchStatement(value, elements), opening);
     }
 
     // Groups C# else-if and else blocks into one language-neutral conditional.

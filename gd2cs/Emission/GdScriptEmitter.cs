@@ -424,6 +424,9 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 case ConditionalStatement statement:
                     EmitConditional(output, statement, indent);
                     break;
+                case SwitchStatement statement:
+                    EmitMatch(output, statement, indent);
+                    break;
                 case BreakStatement:
                     output.AppendLine(indent + "break");
                     break;
@@ -433,6 +436,36 @@ public sealed class GdScriptEmitter : IScriptEmitter
                 default:
                     throw new NotSupportedException("Unsupported language dialect.");
             }
+        }
+    }
+
+    // Section exits are implicit in GD; preserved return/continue statements keep their original meaning.
+    private void EmitMatch(StringBuilder output, SwitchStatement statement, string indent)
+    {
+        output.Append(indent + "match ");
+        EmitExpression(output, statement.Value, indent);
+        output.AppendLine(":");
+        foreach (var element in statement.Elements)
+        {
+            if (element is not SwitchSection section)
+            {
+                EmitBody(output, [element], indent + "\t");
+                continue;
+            }
+            output.Append(indent + "\t");
+            for (var index = 0; index < section.Labels.Count; index++)
+            {
+                if (index > 0)
+                    output.Append(", ");
+                if (section.Labels[index] is { } label)
+                    EmitExpression(output, label, indent + "\t");
+                else
+                    output.Append('_');
+            }
+            output.AppendLine(":");
+            EmitBody(output, section.Elements, indent + "\t\t");
+            if (section.Elements.All(element => element is CommentElement or BlankLineElement))
+                output.AppendLine(indent + "\t\tpass");
         }
     }
 

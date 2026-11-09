@@ -991,6 +991,9 @@ public sealed class CSharpEmitter : IScriptEmitter
                 case ConditionalStatement statement:
                     EmitConditional(output, statement, indent);
                     break;
+                case SwitchStatement statement:
+                    EmitSwitch(output, statement, indent);
+                    break;
                 case BreakStatement:
                     output.AppendLine(indent + "break;");
                     break;
@@ -1001,6 +1004,45 @@ public sealed class CSharpEmitter : IScriptEmitter
                     throw new NotSupportedException("Unsupported language dialect.");
             }
         }
+    }
+
+    // Only reachable section ends need a generated break. Scope case locals separately,
+    // matching GD branches, while consecutive labels deliberately share a single body.
+    private void EmitSwitch(StringBuilder output, SwitchStatement statement, string indent)
+    {
+        output.Append(indent + "switch (");
+        EmitExpression(output, statement.Value, indent);
+        output.AppendLine(")");
+        output.AppendLine(indent + "{");
+        foreach (var element in statement.Elements)
+        {
+            if (element is not SwitchSection section)
+            {
+                EmitBody(output, [element], indent + "    ");
+                continue;
+            }
+            foreach (var label in section.Labels)
+            {
+                output.Append(indent + "    ");
+                if (label is null)
+                    output.AppendLine("default:");
+                else
+                {
+                    output.Append("case ");
+                    EmitExpression(output, label, indent + "    ");
+                    output.AppendLine(":");
+                }
+            }
+            var scoped = section.Elements.Any(element => element is LocalVariableStatement);
+            if (scoped)
+                output.AppendLine(indent + "    {");
+            EmitBody(output, section.Elements, indent + "        ");
+            if (!SwitchSemantics.EndsControlFlow(section.Elements))
+                output.AppendLine(indent + "        break;");
+            if (scoped)
+                output.AppendLine(indent + "    }");
+        }
+        output.AppendLine(indent + "}");
     }
 
     private void EmitFor(StringBuilder output, CounterLoopStatement statement, string indent)

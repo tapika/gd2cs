@@ -143,6 +143,12 @@ Use `=` to retain dynamic access to the returned C# instance's members. Call the
 
 ## C# and GDScript interoperability
 
+### Match / switch
+
+GDScript `match` maps to C# `switch`: constant/enum labels are supported, comma-separated patterns become consecutive `case` labels, and `_` becomes `default`. The default must be last. C# emits `break;` at reachable case ends; `return` still returns from the function. Only empty labels may fall through to a shared body. Branch-local variables retain separate scopes.
+
+Collection/binding patterns, pattern guards, and early switch-exiting `break` statements are not supported; use `if`/`else` or restructure the branch. Loop `continue` and breaks inside nested loops retain their loop meaning.
+
 ### Typed properties
 
 Prefer a typed property when the same receiver type is needed outside one function. A getter can expose a singleton without repeating its lookup or caching an instance:

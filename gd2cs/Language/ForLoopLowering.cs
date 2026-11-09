@@ -69,6 +69,9 @@ internal static class ForLoopLowering
                     if (branch.ElseElements is not null)
                         Collect(branch.ElseElements);
                 }
+                if (element is SwitchStatement selection)
+                    foreach (var section in selection.Elements.OfType<SwitchSection>())
+                        Collect(section.Elements);
             }
         }
         Collect(loop.Elements);
@@ -109,7 +112,25 @@ internal static class ForLoopLowering
                 else
                     result.Add(iterator);
             }
-            if (element is ConditionalStatement conditional)
+            // A match does not own continue: it still advances the enclosing counter loop.
+            if (element is SwitchStatement selection)
+            {
+                var sections = new List<SyntaxElement>();
+                foreach (var child in selection.Elements)
+                {
+                    if (child is not SwitchSection section)
+                    {
+                        sections.Add(child);
+                        continue;
+                    }
+                    var body = RewriteContinues(section.Elements, iterator, fold);
+                    if (body is null)
+                        return null;
+                    sections.Add(section with { Elements = body });
+                }
+                result.Add(selection with { Elements = sections });
+            }
+            else if (element is ConditionalStatement conditional)
             {
                 var branches = new List<ConditionalBranch>();
                 foreach (var branch in conditional.Branches)
