@@ -174,6 +174,18 @@ var count : int:
 
 Read-only, write-only, static and nested properties are supported. Custom setter parameter names are preserved using a reversible C# local alias of `value`. Use explicit blocks: auto-properties, property initializers and GDScript's implicit self-referencing backing storage are not supported.
 
+### Updating components of value-type properties
+
+GDScript permits `control.custom_minimum_size.y = height`, but its C# equivalent fails with CS1612: `CustomMinimumSize` returns a `Vector2` struct copy, not a writable variable. gd2cs does not automatically generate writeback. Copy the property to a local, change the component, then assign the whole value back:
+
+```gdscript
+var minimumSize : Vector2 = control.custom_minimum_size
+minimumSize.y = height
+control.custom_minimum_size = minimumSize
+```
+
+This preserves the other components and works in both languages. Use the same pattern for other struct-valued properties, such as a node's position or transform.
+
 ### C# visibility
 
 GDScript has no C# access modifiers. Classes and members translated by gd2cs must be `public`; change `private`, `protected`, `internal`, or implicitly private declarations to `public`. Property accessors must also be public: remove a restricted accessor modifier such as `private set`. gd2cs's generated private helper functions are exempt.
